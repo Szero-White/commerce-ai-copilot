@@ -9,6 +9,7 @@ from .config import ROOT, Settings
 from .storage import Store
 from .services import question_answer, campaign_draft, evaluate_retrieval
 from .agent import run_agent
+from .ollama import ModelUnavailable, has_model, list_models
 from .support import triage_message
 
 
@@ -32,7 +33,7 @@ class Campaign(BaseModel):
 def create_app(data_path=None, settings=None):
     settings=settings or Settings()
     store=Store(Path(data_path) if data_path else settings.data_path)
-    app=FastAPI(title="Commerce AI Lab",version="2.1.0",
+    app=FastAPI(title="Commerce AI Lab",version="3.0.0",
         description="Portfolio demonstration of retrieval, opt-in LLM generation, drafts and evaluation.")
     app.state.store=store
     app.state.settings=settings
@@ -43,13 +44,23 @@ def create_app(data_path=None, settings=None):
         return FileResponse(ROOT/"web"/"index.html")
 
     @app.get("/api/health")
-    def health():
+    def health(probe: bool=False):
+        """Configuration only by default. ?probe=true also asks the local Ollama (GET /api/tags)."""
         docs=store.documents()
-        return {"status":"ok","documents":len(docs),"llm_provider":settings.llm_provider,
+        result={"status":"ok","documents":len(docs),"llm_provider":settings.llm_provider,
                 "embedding_provider":settings.embedding_provider,
                 "vector_indexed":sum(bool(d["embedding_json"]) and d.get("embedding_model")==settings.embedding_model for d in docs),
                 "embedding_model":settings.embedding_model if settings.embedding_provider=="ollama" else None,
                 "simulation":True,"public_data_only":True}
+        if probe and "ollama" in (settings.llm_provider,settings.embedding_provider):
+            try:
+                installed=list_models(settings)
+                result["ollama"]={"reachable":True,
+                    "llm_model_available":has_model(installed,settings.ollama_model) if settings.llm_provider=="ollama" else None,
+                    "embedding_model_available":has_model(installed,settings.embedding_model) if settings.embedding_provider=="ollama" else None}
+            except ModelUnavailable as exc:
+                result["ollama"]={"reachable":False,"error":str(exc)[:200]}
+        return result
 
     @app.get("/api/products")
     def products():

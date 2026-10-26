@@ -1,9 +1,9 @@
 """Bounded, read-only tool-calling agent. No checkout, email, Ads API or data modification."""
 import json
 import time
-from .ollama import request_json, ModelUnavailable
+from .ollama import request_json, ModelUnavailable, count
 from .retrieval import search
-from .evidence import valid_cited_answer
+from .evidence import valid_cited_answer, context_window
 
 TOOLS = [
     {"type":"function","function":{"name":"lookup_product","description":"Read public product specs by product document ID",
@@ -42,14 +42,21 @@ def run_agent(store,settings,task):
     messages=[{"role":"system","content":SYSTEM},{"role":"user","content":task}]
     answer=""
     policy_blocked=False
+    llm_failed=False
+    max_prompt=0
     try:
         for step_index in range(3):
             payload={"model":settings.ollama_model,"messages":messages,"stream":False,
-                     "tools":TOOLS,"options":{"num_predict":settings.max_output_tokens,"temperature":0.1}}
+                     "tools":TOOLS,"options":{"num_predict":settings.max_output_tokens,"temperature":0.1,
+                                              "num_ctx":settings.num_ctx}}
             result=request_json(settings.ollama_url,"/api/chat",payload,settings.timeout_seconds)
-            token_in+=int(result.get('prompt_eval_count') or 0)
-            token_out+=int(result.get('eval_count') or 0)
-            msg=result.get('message') or {}
+            prompt_tokens=count(result.get('prompt_eval_count'))
+            max_prompt=max(max_prompt,prompt_tokens)
+            token_in+=prompt_tokens
+            token_out+=count(result.get('eval_count'))
+            msg=result.get('message')
+            if not isinstance(msg,dict):
+                raise ModelUnavailable('Ollama returned a message that is not an object')
             call_list=msg.get('tool_calls') or []
             # Last iteration is solely to summarize; no third tool use permitted.
             if not call_list or step_index==2:
@@ -74,6 +81,7 @@ def run_agent(store,settings,task):
             trace.append({"step":len(trace)+1,"tool":name[:60],"arguments":args,"result":tool_result})
             messages.append({"role":"tool","tool_name":name,"content":json.dumps(tool_result,ensure_ascii=False)})
     except ModelUnavailable as exc:
+        llm_failed=True
         answer=f"Không kết nối được mô hình Ollama: {str(exc)[:120]}"
     # Read-only tools produce verifiable document IDs; the LLM's final text
     # cannot claim it used other sources. Citation checks are not a substitute
@@ -85,7 +93,12 @@ def run_agent(store,settings,task):
             evidence.append({'id': result['source'], 'title': '', 'content': result['content']})
         for policy in result.get('documents', []):
             evidence.append({'id': policy['source'], 'title': '', 'content': policy['content']})
-    if policy_blocked:
+    # Modes: agent_disabled (LLM off, returned earlier) | agent_llm_unavailable (call failed;
+    # the error text is kept) | agent_tool_blocked | agent_no_verified_evidence |
+    # agent_answer_rejected | tool_calling_agent.
+    if llm_failed:
+        mode='agent_llm_unavailable'
+    elif policy_blocked:
         mode='agent_tool_blocked'
     elif not evidence:
         mode='agent_no_verified_evidence'
@@ -100,4 +113,5 @@ def run_agent(store,settings,task):
     elapsed=round((time.perf_counter()-started)*1000)
     store.log('agent',mode,elapsed,token_in,token_out)
     return {"mode":mode,"answer":answer,"steps":trace,"approval_required":True,
-            "tokens_in":token_in,"tokens_out":token_out,"latency_ms":elapsed}
+            "tokens_in":token_in,"tokens_out":token_out,"latency_ms":elapsed,
+            "context_window":context_window(settings,max_prompt)}
