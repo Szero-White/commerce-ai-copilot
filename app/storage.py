@@ -1,5 +1,6 @@
 """SQLite for the demo. Normalized FTS5 index avoids fragile Vietnamese diacritics matching."""
 import json
+import math
 import re
 import sqlite3
 import threading
@@ -15,7 +16,33 @@ def normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9 ]+", " ", text.lower())
 
 
-STOP = set("toi minh ban cho ve va la co khong nao gi bao nhieu the nao thu duoc cua voi trong mot khi hay can giup xem tim san pham loai hang".split())
+STOP = set("""toi minh ban cho ve va la co khong nao gi bao nhieu the nao thu duoc cua voi trong mot khi hay can
+giup xem tim san pham loai hang lau may nhu nay hom muon xin mua tai tren cac nhung moi da dang se rat qua
+hoac neu thi de di den tu ra vao what is the a an of in do you can i how much are there for to who tell me
+it be on at by with and or my your we this that does did will would should could any some about""".split())
+STOP_ACCENTED = {"mất"}
+# Spoken form -> the form used in the documents (checked on normalized text).
+ALIASES = {"thanh pho ho chi minh": "tp hcm", "sai gon": "tp hcm", "ho chi minh": "tp hcm"}
+# Obvious non-commerce topics. A lexical index cannot tell that "thời tiết" only matches the
+# unrelated words "thời gian" and "tiết kiệm", so these are refused before searching.
+OUT_OF_SCOPE = ("thoi tiet", "bitcoin", "tien ao", "gia vang", "ty gia", "co phieu", "chung khoan",
+                "bong da", "weather", "football", "horoscope", "tu vi")
+# A query is answerable only if its (IDF-weighted) terms are mostly present in one document.
+MIN_COVERAGE = 0.5
+
+
+def _inflectable(term: str) -> bool:
+    return len(term) >= 4 and not term.isdigit()
+
+
+def _present(term: str, doc_terms: set) -> bool:
+    """Exact token, or an English inflection such as size -> sizes (at most 2 extra letters)."""
+    return term in doc_terms or (_inflectable(term) and any(
+        d.startswith(term) and len(d) - len(term) <= 2 for d in doc_terms))
+
+
+def _raw_tokens(text: str) -> list[str]:
+    return re.findall(r"\w+", unicodedata.normalize("NFC", text).lower())
 
 
 class Store:
@@ -84,26 +111,53 @@ class Store:
             cx.execute("UPDATE documents SET embedding_json=?, embedding_model=? WHERE id=?", (json.dumps(embedding), model, doc_id))
 
     def fts_search(self, query, limit=12):
-        terms = [t for t in normalize(query).split() if len(t) >= 2 and t not in STOP]
+        padded = " " + " ".join(normalize(query).split()) + " "
+        if any(f" {phrase} " in padded for phrase in OUT_OF_SCOPE):
+            return []
+        # Single digits are kept: "giảm 5%" must be checked against the documents like "90" is.
+        spoken = " ".join(normalize(query).split())
+        for alias, canonical in ALIASES.items():
+            spoken = spoken.replace(alias, canonical)
+        terms = [t for t in spoken.split() if (len(t) >= 2 or t.isdigit()) and t not in STOP]
         terms = list(dict.fromkeys(terms))[:10]
         if not terms:
             return []
-        expression = " OR ".join('"' + t + '"' for t in terms)
+        # Words typed WITH diacritics must match with diacritics ("nhân viên" != "nhận"); only a
+        # diacritic-free query word may match loosely.
+        accented = {}
+        for raw in _raw_tokens(query):
+            norm = normalize(raw).strip()
+            if raw in STOP_ACCENTED and norm in terms:
+                terms.remove(norm)  # "mất" (how long) is a question word, unlike "mặt" (surface)
+            elif norm in terms and raw != norm:
+                accented[norm] = raw
+        if not terms:
+            return []
+        expression = " OR ".join('"' + t + '"' + ("*" if _inflectable(t) else "") for t in terms)
         with self.connect() as cx:
             rows = cx.execute("""SELECT d.*,bm25(document_fts) AS fts_score
                 FROM document_fts JOIN documents d ON document_fts.doc_id=d.id
                 WHERE document_fts MATCH ? ORDER BY fts_score LIMIT ?""", (expression, limit * 3)).fetchall()
+            corpus = [set(normalize(r[0] + " " + r[1]).split()) for r in
+                      cx.execute("SELECT title,content FROM documents")]
+            df = {t: sum(_present(t, d) for d in corpus) for t in terms}
+            # Rare or unknown words carry more weight than words found in most documents.
+            weight = {t: math.log(1 + len(corpus) / ((df[t] or 0.1) + 0.1)) for t in terms}
             filtered = []
             for row in rows:
                 doc = dict(row)
                 # OR-based BM25 alone will happily return irrelevant documents sharing one word.
-                doc_terms = set(normalize(doc["title"] + " " + doc["content"]).split())
-                hits = [t for t in terms if t in doc_terms]
+                text = doc["title"] + " " + doc["content"]
+                doc_terms = set(normalize(text).split())
+                doc_raw = set(_raw_tokens(text))
+                hits = [t for t in terms if _present(t, doc_terms) and (t not in accented or accented[t] in doc_raw)]
                 numeric = [t for t in terms if t.isdigit()]
                 if len(terms) >= 3 and (len(hits) < 2 or len(hits) / len(terms) < 0.34):
                     continue
                 if any(t not in doc_terms for t in numeric):
                     continue  # Do not answer a made-up discount/size/price by loose keyword match.
+                if sum(weight[t] for t in hits) / sum(weight.values()) < MIN_COVERAGE:
+                    continue
                 filtered.append(doc)
                 if len(filtered) >= limit:
                     break

@@ -89,9 +89,12 @@ def test_english_pod_catalog_and_policy(tmp_path):
 
 def test_evaluation_rejection_set_is_reported(tmp_path):
     d=client(tmp_path).get("/api/evaluation").json()
-    assert d["total"]==13
-    assert d["negative_rejection"]["total"]==3
-    assert d["negative_rejection"]["passed"]>=2, d["negative_rejection"]
+    positives=json.loads((ROOT/"data"/"eval_set.json").read_text(encoding="utf-8"))
+    negatives=json.loads((ROOT/"data"/"negative_eval_set.json").read_text(encoding="utf-8"))
+    assert d["total"]==len(positives)>=30
+    assert d["negative_rejection"]["total"]==len(negatives)>=30
+    assert d["score"]>=.9, d
+    assert d["negative_rejection"]["score"]>=.9, [c for c in d["negative_rejection"]["cases"] if not c["correctly_rejected"]]
 
 
 def test_context_pack_and_citation_validator():

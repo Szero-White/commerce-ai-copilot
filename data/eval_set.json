@@ -50,5 +50,77 @@
   {
     "question": "How much is the personalized ceramic mug 11oz?",
     "expected_source": "POD-201"
+  },
+  {
+    "question": "Giao hàng tỉnh khác mất bao lâu?",
+    "expected_source": "POL-001"
+  },
+  {
+    "question": "Đổi trả trong 7 ngày được không?",
+    "expected_source": "POL-002"
+  },
+  {
+    "question": "Đèn bàn Focus LED giá bao nhiêu?",
+    "expected_source": "PRD-103"
+  },
+  {
+    "question": "Tủ Slim giá bao nhiêu?",
+    "expected_source": "PRD-104"
+  },
+  {
+    "question": "Ghế Flex bảo hành mấy tháng?",
+    "expected_source": "PRD-102"
+  },
+  {
+    "question": "Chatbot có được tiết lộ địa chỉ khách không?",
+    "expected_source": "POL-005"
+  },
+  {
+    "question": "Chuyển khoản ngân hàng được không?",
+    "expected_source": "POL-004"
+  },
+  {
+    "question": "Dịch vụ lắp đặt tại TP.HCM tính phí thế nào?",
+    "expected_source": "POL-006"
+  },
+  {
+    "question": "Khi không tìm thấy dữ liệu chatbot phải làm gì?",
+    "expected_source": "OPS-001"
+  },
+  {
+    "question": "Đèn bàn có mấy mức sáng?",
+    "expected_source": "PRD-103"
+  },
+  {
+    "question": "Ghế Flex có tựa tay không?",
+    "expected_source": "PRD-102"
+  },
+  {
+    "question": "Tủ Slim màu gì?",
+    "expected_source": "PRD-104"
+  },
+  {
+    "question": "Bàn Oak chiều cao bao nhiêu?",
+    "expected_source": "PRD-101"
+  },
+  {
+    "question": "Hoodie size nào?",
+    "expected_source": "POD-202"
+  },
+  {
+    "question": "Thời gian giao hàng ngoài TP.HCM?",
+    "expected_source": "POL-001"
+  },
+  {
+    "question": "Bảo hành đèn bàn bao lâu?",
+    "expected_source": "POL-003"
+  },
+  {
+    "question": "Hàng hư hại do dùng sai có được đổi trả không?",
+    "expected_source": "POL-002"
+  },
+  {
+    "question": "Phí lắp đặt báo giá thế nào?",
+    "expected_source": "POL-006"
   }
 ]

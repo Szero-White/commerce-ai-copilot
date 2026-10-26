@@ -17,7 +17,8 @@ from app.main import create_app
 def main():
     start = time.perf_counter()
     cases = []
-    with tempfile.TemporaryDirectory() as directory:
+    # Windows keeps SQLite files locked until GC; cleanup errors must not abort the report.
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
         config = replace(Settings(), data_path=Path(directory)/'acceptance.db',
                          llm_provider='off', embedding_provider='off')
         with TestClient(create_app(settings=config)) as api:
@@ -48,8 +49,9 @@ def main():
             check('Agent does not fake LLM usage', agent['mode'] == 'agent_disabled' and not agent['steps'],
                   {'mode': agent['mode']})
             eval_result = api.get('/api/evaluation').json()
-            check('Retrieval evaluation has distinct negative set', eval_result['total'] == 13 and
-                  eval_result['negative_rejection']['total'] == 3,
+            check('Retrieval evaluation has distinct negative set', eval_result['total'] >= 30 and
+                  eval_result['negative_rejection']['total'] >= 30 and eval_result['score'] >= 0.9 and
+                  eval_result['negative_rejection']['score'] >= 0.9,
                   {'hit_at_3': eval_result['score'], 'positive_passed': eval_result['passed'],
                    'positive_total': eval_result['total'], 'out_of_scope_passed':
                    eval_result['negative_rejection']['passed']})
@@ -57,7 +59,7 @@ def main():
                   api.post('/api/admin/index-embeddings').status_code == 403,
                   {'http_status': 403})
     result = {
-        'release': '2.1.0', 'measured_utc': datetime.now(timezone.utc).isoformat(),
+        'release': '3.0.0', 'measured_utc': datetime.now(timezone.utc).isoformat(),
         'kind': 'offline_synthetic_api_acceptance', 'llm_used': False,
         'embeddings_used': False, 'paid_api_used': False,
         'disclaimer': ('Demonstrates local FastAPI and deterministic workflows only. '
