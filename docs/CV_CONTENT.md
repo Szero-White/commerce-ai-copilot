@@ -4,7 +4,7 @@
 
 **Commerce AI Copilot — personal project, Python / FastAPI / SQLite** (GitHub: add link)
 - Built a RAG-style service for e-commerce on synthetic data: SQLite FTS5/BM25 retrieval with a relevance gate (IDF-weighted coverage, diacritic-aware matching, numeric checks), cited answers and explicit abstention.
-- Implemented validation of LLM output (citation IDs, numbers present in the cited sources, unsupported promises, answers that contradict a negated policy) with labelled fallbacks; covered by 196 automated tests, including regression tests for every audited defect.
+- Implemented validation of LLM output (citation IDs, numbers present in the cited sources, unsupported promises, answers that contradict a negated policy) with labelled fallbacks; covered by 199 automated tests, including regression tests for every audited defect.
 - Wrote a local-only Ollama adapter (explicit context window, timeouts, malformed-response handling) and a bounded read-only tool-calling agent, **tested with mock models and fake HTTP servers**. Also wrote a hosted free-tier (Gemini) adapter with host/model allowlists, request and per-text embedding budgets, an on-disk embedding cache and a quota stop. Ran one small end-to-end smoke test against the real Gemini free tier (3 cited answers judged correct, 2 out-of-scope refusals, 1 tool-calling agent task); the first live attempts exposed and fixed four defects (response-size limit, per-text rate limiting, misclassified 429 errors, a retired default model).
 - Built a 64-question retrieval evaluation (Hit@3 and out-of-scope refusal) and an offline acceptance script; documented limits of every metric.
 

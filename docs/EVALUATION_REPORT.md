@@ -6,7 +6,7 @@ Produced by running the code in this repository on 2026-10-26 (Windows 11, Pytho
 
 | Check | Result |
 |---|---|
-| `python -m pytest -q` | **196 passed** |
+| `python -m pytest -q` | **199 passed** |
 | `python -m scripts.portfolio_check` | **8/8** offline workflow checks (no longer needs `ignore_cleanup_errors`: SQLite connections are now closed) |
 | HTTP smoke test against live uvicorn, LLM off | `/`, health, chat (incl. the former leaks), campaign, triage, agent (disabled), evaluation, metrics: all as expected |
 | Browser rendering | **Not tested** (no browser tool available). `node --check web/app.js` passes and all element IDs used by the script exist in the HTML |
@@ -47,7 +47,7 @@ Demo-visible fixes in this round: extractive answers now cut at sentence boundar
 
 ## 4. Live (hosted) evaluation: one smoke run succeeded; the full evaluation has not run
 
-The owner created a Google AI Studio project (Free Tier, billing not set up), supplied a key through `run_gemini_live.ps1`, and ran `scripts/live_eval.py` three times (two full-mode attempts, then the smoke mode). The first two runs (full mode) and an initial smoke attempt produced no answer; the fourth run (smoke, `gemini-3.5-flash-lite`) did: 3 correct cited answers (AI-reviewed), 2 correct refusals without a model call, and 1 agent task whose final answer was rejected by the validator (reason not recorded; diagnostics added since). Details, token counts and the latency caveat are in [LIVE_EVALUATION_GEMINI.md](LIVE_EVALUATION_GEMINI.md). **Still no measurements of hybrid retrieval quality, the 0.38 cosine threshold, faithfulness on a useful sample, or agent final-answer reliability.** What the attempts did show (hosted `gemini-embedding-001` / `gemini-2.5-flash`, synthetic data, free tier):
+The owner created a Google AI Studio project (Free Tier, billing not set up), supplied a key through `run_gemini_live.ps1`, and ran `scripts/live_eval.py` three times (two full-mode attempts, then the smoke mode). The first two runs (full mode) and an initial smoke attempt produced no answer; the fourth run (smoke, `gemini-3.5-flash-lite`) did: 3 correct cited answers (AI-reviewed), 2 correct refusals without a model call, and 1 agent task whose final answer was rejected by the validator (reason not recorded in that run; an offline replay of the real tool output found a false-rejection bug, since fixed, but not yet re-run against the model). Details, token counts and the latency caveat are in [LIVE_EVALUATION_GEMINI.md](LIVE_EVALUATION_GEMINI.md). **Still no measurements of hybrid retrieval quality, the 0.38 cosine threshold, faithfulness on a useful sample, or agent final-answer reliability.** What the attempts did show (hosted `gemini-embedding-001` / `gemini-2.5-flash`, synthetic data, free tier):
 
 | Observation | Evidence |
 |---|---|

@@ -1,5 +1,7 @@
 # Live smoke evaluation — hosted Gemini free tier (2026-10-26)
 
+> **Which run this describes.** `reports/live_eval_gemini_smoke.json` in the repository was written at 15:39 and is the only real-model report that exists here. It predates the agent fixes (15:43 and later). A later run that the owner reported does **not** appear in the repository (no newer report file anywhere on the machine), so nothing below is claimed about it. The agent result is therefore still the pre-fix one.
+
 **Read first.** This is the *only* real-model evidence in the repository: one smoke run, 3 answerable questions, 2 refusals and 1 agent task, on synthetic data. It shows that the pipeline works end to end with a real model. It is **not** an accuracy measurement and says nothing about local models, embeddings or production use.
 
 | Item | Value |
@@ -39,9 +41,14 @@ Contract result `5/5` only means the expected mode/source appeared. Cases 4 and 
 
 1. Real generation, the citation/number/negation validator and the labelled fallbacks work together on a real model: three correct, cited answers, with the negated policy preserved.
 2. Function calling works at the protocol level: the model chose valid read-only tools and the agent loop executed them.
-3. **The agent's final answer was rejected by our validator, and the reason is unknown** because the draft was not saved. Likely cause (hypothesis, unconfirmed): models often write several IDs in one bracket, `[PRD-101, POL-001]`, which the old validator did not read as citations. Since then the validator accepts grouped IDs, the agent prompt asks for one ID per bracket, and a rejected result now carries `rejection.reasons` and the unverified draft for the reviewer. Another smoke run is needed to see whether the agent now passes or what rule it breaks.
+3. **The agent's final answer was rejected by our validator and the reason is unknown**, because that run did not save the draft. Instead of guessing, the real tool outputs (`lookup_product PRD-101`, `search_policy`) were replayed offline against plausible *faithful* answers. That found a genuine false-rejection bug: prose such as "Sản phẩm PRD-101 …" was rejected because the digits of the document ID counted as an unsupported number. (Earlier, grouped citations `[PRD-101, POL-001]` were also not understood.) Fixed generally: IDs of sources the system supplied are labels, not numeric claims; invented IDs (`PRD-555`), invented numbers and unaffirmed promises are still rejected; an answer that states facts from a document it did not cite is still rejected. Also fixed: the agent's last turn may no longer request a tool (Gemini `toolConfig` mode NONE / no tools for Ollama), because an empty last turn would also have produced a rejection. **None of this has been confirmed against the real model**: it needs one more smoke run (about 7 requests, no embeddings).
 4. Four defects only a live run could expose were fixed earlier (3 MB response cap, per-text embedding quota, 429 misclassified as billing, retired default model).
+
+## Privacy of diagnostics
+
+The rejected draft and its reason (`rejection`) are produced only when `run_agent(..., diagnostics=True)` is called, which only `scripts/live_eval.py` does. The HTTP API never passes it, so an unverified draft cannot reach the UI or any client (pinned by `test_agent_rejection_diagnostics_are_local_only`).
 
 ## Still not verified
 
+The agent's final answer against the real model after the fixes; 
 Hybrid retrieval with real embeddings and the 0.38 cosine threshold (embeddings were produced in earlier aborted runs — 3072 dimensions, 16 documents in about 3.5 s — but never evaluated); faithfulness at any useful sample size; the retrieval-gate behaviour with a model in the loop on the full evaluation sets; behaviour of the guard when the model repeats an injected claim; any local model.

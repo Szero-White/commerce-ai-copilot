@@ -2,13 +2,13 @@
 
 > **Personal portfolio project on 100% synthetic data.** Not a NEXGEN BROS product and not a production system. It was built around the skills in a public *AI Engineer (LLM/RAG/AI Automation)* job description. The Vietnamese README is kept in [docs/README_VI.md](docs/README_VI.md).
 
-**Honest status in one line:** retrieval, guards, API, evaluation and error handling are implemented and tested offline. The LLM path has been verified against a **real hosted model exactly once, as a small smoke test** (Gemini free tier, `gemini-3.5-flash-lite`, 3 cited answers all correct, 2 refusals, 1 tool-calling agent task whose final answer our validator rejected for a reason still to be diagnosed): see [docs/LIVE_EVALUATION_GEMINI.md](docs/LIVE_EVALUATION_GEMINI.md). Everything else on the LLM side (embeddings, hybrid retrieval, a meaningful sample size, local models) is still mock-only or unverified.
+**Honest status in one line:** retrieval, guards, API, evaluation and error handling are implemented and tested offline. The LLM path has been verified against a **real hosted model exactly once, as a small smoke test** (Gemini free tier, `gemini-3.5-flash-lite`, 3 cited answers all correct, 2 refusals, 1 tool-calling agent task whose final answer our validator rejected; replaying real tool output offline exposed a genuine false-rejection bug that is now fixed, but the agent has **not** been re-verified against the real model): see [docs/LIVE_EVALUATION_GEMINI.md](docs/LIVE_EVALUATION_GEMINI.md). Everything else on the LLM side (embeddings, hybrid retrieval, a meaningful sample size, local models) is still mock-only or unverified.
 
 ## What works, and how it was verified
 
 | Area | Status | Evidence |
 |---|---|---|
-| FastAPI service, SQLite FTS5 (BM25) retrieval, source citation, abstention | **Run for real (offline)** | 196 pytest tests, 8/8 offline acceptance, all endpoints exercised over HTTP against a live uvicorn |
+| FastAPI service, SQLite FTS5 (BM25) retrieval, source citation, abstention | **Run for real (offline)** | 199 pytest tests, 8/8 offline acceptance, all endpoints exercised over HTTP against a live uvicorn |
 | Retrieval relevance gate (IDF coverage, accent-aware match, out-of-scope phrases) | **Run for real (offline)** | 31 positive / 33 negative evaluation questions ([report](docs/EVALUATION_REPORT.md)) |
 | Evidence guards: numbers, promises, negated policies, audience injection | **Run for real (offline)** | Unit + API regression tests. Pattern matching only; see limits below |
 | Support-ticket triage (rules, human review required) | **Run for real (offline)** | Deterministic, **not** an AI agent |
@@ -26,7 +26,7 @@
 ```powershell
 python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements-dev.txt
-.venv\Scripts\python -m pytest -q                       # 196 passed
+.venv\Scripts\python -m pytest -q                       # 199 passed
 .venv\Scripts\python -m scripts.portfolio_check         # 8/8 offline acceptance
 .venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
@@ -73,7 +73,7 @@ Details and design decisions: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Repository map
 
-`app/` service · `data/` synthetic catalogue, policies and evaluation sets · `tests/` 196 tests · `scripts/` ingest, index, offline acceptance, live verification · `docs/` architecture, evaluation, demo script, CV text, live-verification options, audit history · `web/` static UI.
+`app/` service · `data/` synthetic catalogue, policies and evaluation sets · `tests/` 199 tests · `scripts/` ingest, index, offline acceptance, live verification · `docs/` architecture, evaluation, demo script, CV text, live-verification options, audit history · `web/` static UI.
 
 ## Job-description mapping (honest)
 
