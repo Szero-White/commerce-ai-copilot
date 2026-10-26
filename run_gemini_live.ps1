@@ -1,6 +1,6 @@
 <#
   Live evaluation launcher for the Gemini API FREE TIER (synthetic data only).
-  You run this yourself:  powershell -NoProfile -ExecutionPolicy Bypass -File .\run_gemini_live.ps1
+  You run this yourself:  powershell -NoProfile -ExecutionPolicy Bypass -File .\run_gemini_live.ps1 [-Model gemini-3.5-flash-lite]
 
   What it does, in order:
     1. asks for the API key with Read-Host -AsSecureString (typed input is not echoed and not saved
@@ -19,7 +19,10 @@
 
   -SelfTest: no key prompt, no network. Uses a fake key to prove the masking and clean-up logic.
 #>
-param([switch]$SelfTest)
+param([switch]$SelfTest, [string]$Model = 'gemini-3.5-flash-lite')
+
+# Only a model NAME is accepted here; app\gemini.py still refuses anything outside its free-tier allowlist.
+if ($Model -notmatch '^gemini-[a-z0-9.\-]+$') { Write-Host 'Invalid -Model value.' -ForegroundColor Yellow; exit 2 }
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
@@ -42,7 +45,7 @@ try {
     } else {
         Write-Host ''
         Write-Host 'This will send ONLY synthetic catalogue/policy text and demo questions to the Gemini API'
-        Write-Host '(smoke test: model gemini-2.5-flash only, about 7 requests, nothing is embedded; hard limit 40).'
+        Write-Host "(smoke test: model $Model only, about 7 requests, nothing is embedded; hard limit 40)."
         Write-Host 'Use a key from a Google AI Studio project that shows "Free Tier" and has NO billing set up.'
         $secure = Read-Host 'Paste the API key (input is hidden)' -AsSecureString
         $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
@@ -56,7 +59,7 @@ try {
     $env:GEMINI_API_KEY = $plain
     $env:LLM_PROVIDER = 'gemini'
     $env:EMBEDDING_PROVIDER = 'gemini'
-    $env:GEMINI_MODEL = 'gemini-2.5-flash'
+    $env:GEMINI_MODEL = $Model
     $env:EMBEDDING_MODEL = 'gemini-embedding-001'
     $env:GEMINI_EMBEDDING_MODEL = 'gemini-embedding-001'
     $env:GEMINI_CONFIRM_FREE_TIER = 'yes'

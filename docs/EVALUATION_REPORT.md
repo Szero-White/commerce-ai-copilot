@@ -6,7 +6,7 @@ Produced by running the code in this repository on 2026-10-26 (Windows 11, Pytho
 
 | Check | Result |
 |---|---|
-| `python -m pytest -q` | **186 passed** |
+| `python -m pytest -q` | **192 passed** |
 | `python -m scripts.portfolio_check` | **8/8** offline workflow checks (no longer needs `ignore_cleanup_errors`: SQLite connections are now closed) |
 | HTTP smoke test against live uvicorn, LLM off | `/`, health, chat (incl. the former leaks), campaign, triage, agent (disabled), evaluation, metrics: all as expected |
 | Browser rendering | **Not tested** (no browser tool available). `node --check web/app.js` passes and all element IDs used by the script exist in the HTML |
@@ -45,9 +45,9 @@ Known bypasses: wording not in the lists; a sentence mixing a true and a false c
 
 Demo-visible fixes in this round: extractive answers now cut at sentence boundaries (the "not eligible for free return" exclusion of POL-002 was previously cut off); campaign templates no longer include internal notes ("Do not claim stock…"), SKUs or prices; the agent's `search_policy` tool is no longer starved by product hits.
 
-## 4. Live (hosted) evaluation: attempted twice, NOT completed
+## 4. Live (hosted) evaluation: attempted three times, NOT completed
 
-The owner created a Google AI Studio project (Free Tier, billing not set up), supplied a key through `run_gemini_live.ps1`, and ran `scripts/live_eval.py` twice. **Neither run reached the answer-quality part, so there are still no measurements of answer faithfulness, hybrid retrieval quality, the 0.38 cosine threshold, generation latency or token use, or tool-calling reliability.** What the attempts did show (hosted `gemini-embedding-001` / `gemini-2.5-flash`, synthetic data, free tier):
+The owner created a Google AI Studio project (Free Tier, billing not set up), supplied a key through `run_gemini_live.ps1`, and ran `scripts/live_eval.py` three times (two full-mode attempts, then the smoke mode). **None of the runs obtained a single generated answer, so there are still no measurements of answer faithfulness, hybrid retrieval quality, the 0.38 cosine threshold, generation latency or token use, or tool-calling reliability.** What the attempts did show (hosted `gemini-embedding-001` / `gemini-2.5-flash`, synthetic data, free tier):
 
 | Observation | Evidence |
 |---|---|
@@ -55,6 +55,9 @@ The owner created a Google AI Studio project (Free Tier, billing not set up), su
 | Run 1 stopped after 4 requests: a 60-text batch returned >3 MB JSON, over the adapter's 3 MB read cap | adapter bug, fixed (chunking + explicit truncation error) |
 | Run 2 stopped after 9 HTTP requests with HTTP 429. AI Studio showed embedding RPM peak 96/100 and RPD 172/1K: **quota is counted per text, not per request**; 16 documents plus 16-text batches exceeded 100 texts/minute | adapter bug, fixed (per-text rate limiter, 60 texts/min, batches of 8 spaced 8 s, text budget, on-disk cache) |
 | That 429's body says "check your plan and billing details"; the old adapter therefore labelled it "auth or billing" | misclassification, fixed (HTTP status decides; 429 is always rate/quota; billing only for 401/403/FAILED_PRECONDITION) |
+
+| Smoke run (3 RAG questions + 1 agent task, no embeddings) made 5 requests and every generation failed with HTTP 404 "This model models/gemini-2.5-flash is no longer available…". Per Google's deprecations page, the 2.5 generation models are restricted to projects that used them before; new projects should use `gemini-3.5-flash-lite` or `gemini-3.8-flash`. This was my configuration error (I chose models from a pricing-page snapshot) | config bug, fixed: free allowlist updated, default model `gemini-3.5-flash-lite`, a 404 on generation now stops the run at once, the report records the server's verbatim error and the free models this key can call, Gemini-3 thinking settings handled with a one-time fallback |
+| In the same smoke run the 2 out-of-scope questions (weather, coupon code) were correctly refused without any model call, and the 3 answerable questions retrieved the right document lexically (`PRD-101`, `POD-POL-201`, the synthetic poisoned `PRD-999`) before the generation step failed; the system degraded to labelled extractive output (`llm_unavailable_extractive`, `agent_llm_unavailable`) rather than inventing answers | offline behaviour confirmed with a real provider error |
 
 Tests that pin these fixes use fake servers only (`tests/test_gemini_adapter.py`). `live_eval` now defaults to a **smoke** mode (lexical retrieval + Gemini generation for 3 RAG questions, 1 agent task, about 7 requests, no embeddings) and records any stop reason in the report. The full mode is available but has not run.
 

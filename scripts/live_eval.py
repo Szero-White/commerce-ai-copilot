@@ -65,6 +65,13 @@ def cosine(a, b):
     return dot / (na * nb) if na and nb else 0.0
 
 
+def _write(report, smoke):
+    out = REPORT_DIR / ("live_eval_gemini_smoke.json" if smoke else "live_eval_gemini.json")
+    out.parent.mkdir(exist_ok=True)
+    out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    return out
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--full", action="store_true", help="also run embeddings, hybrid retrieval, campaigns, all agent tasks")
@@ -107,13 +114,25 @@ def main(argv=None) -> int:
 
     gemini._send = paced_send
     try:
-        installed = gemini.list_models(settings)
-        needed = [settings.gemini_model] + ([] if smoke else [settings.embedding_model])
-        missing = [m for m in needed if m not in installed]
-        if missing:
-            print(f"Models not visible to this key: {missing}. Stopping; nothing generated.")
+        details = gemini.list_model_details(settings)
+        methods = {m["name"]: m["methods"] for m in details}
+        # What this key can actually call, restricted to the free-tier allowlist (nothing else is ever used).
+        report["models_visible_to_key"] = len(details)
+        report["free_generation_models_visible"] = sorted(
+            n for n in methods if n in gemini.FREE_MODELS and "generateContent" in methods[n])
+        report["free_embedding_models_visible"] = sorted(
+            n for n in methods if n in gemini.FREE_MODELS and any("mbed" in x for x in methods[n]))
+        problems = []
+        if settings.gemini_model not in report["free_generation_models_visible"]:
+            problems.append(settings.gemini_model)
+        if not smoke and settings.embedding_model not in report["free_embedding_models_visible"]:
+            problems.append(settings.embedding_model)
+        if problems:
+            report["stopped_early"] = f"model(s) not callable on the free allowlist for this key: {problems}"
+            print(f"{report['stopped_early']}. Free generation models this key sees: "
+                  f"{report['free_generation_models_visible']}. Nothing generated.")
+            _write(report, smoke)
             return 2
-        report["models_visible_to_key"] = sum(1 for _ in installed)
 
         if not smoke:
             # 1. index documents ------------------------------------------------
@@ -210,12 +229,11 @@ def main(argv=None) -> int:
         print(f"STOPPED: {stop_reason}")
     report["requests_made"] = gemini.requests_made()
     report["embed_texts_sent"] = gemini.embed_texts_sent()
+    report["last_gemini_error"] = gemini.last_error()  # verbatim (key scrubbed), so a stop is never opaque
     report["stopped_early"] = stop_reason
     report["disclaimer"] = ("Hosted Gemini free tier, synthetic data, ONE run on a small hand-written set. "
                             "Contract checks (mode, source IDs) are not factual accuracy; see human/AI review labels.")
-    out = REPORT_DIR / ("live_eval_gemini_smoke.json" if smoke else "live_eval_gemini.json")
-    out.parent.mkdir(exist_ok=True)
-    out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    out = _write(report, smoke)
     print(f"Saved {out} | mode: {report['mode']} | requests: {report['requests_made']} | "
           f"texts embedded: {report['embed_texts_sent']} | stopped early: {bool(stop_reason)}")
     return 1 if stop_reason else 0

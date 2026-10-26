@@ -4,8 +4,8 @@
 
 **Commerce AI Copilot — personal project, Python / FastAPI / SQLite** (GitHub: add link)
 - Built a RAG-style service for e-commerce on synthetic data: SQLite FTS5/BM25 retrieval with a relevance gate (IDF-weighted coverage, diacritic-aware matching, numeric checks), cited answers and explicit abstention.
-- Implemented validation of LLM output (citation IDs, numbers present in the cited sources, unsupported promises, answers that contradict a negated policy) with labelled fallbacks; covered by 186 automated tests, including regression tests for every audited defect.
-- Wrote a local-only Ollama adapter (explicit context window, timeouts, malformed-response handling) and a bounded read-only tool-calling agent, **tested with mock models and fake HTTP servers; no real model has been run**. Also wrote a hosted free-tier (Gemini) adapter with host/model allowlists, request budget and quota stop, likewise mock-tested; first live attempts against it exposed and fixed three adapter defects (response-size limit, per-text rate limiting of embeddings, misclassified 429 errors).
+- Implemented validation of LLM output (citation IDs, numbers present in the cited sources, unsupported promises, answers that contradict a negated policy) with labelled fallbacks; covered by 192 automated tests, including regression tests for every audited defect.
+- Wrote a local-only Ollama adapter (explicit context window, timeouts, malformed-response handling) and a bounded read-only tool-calling agent, **tested with mock models and fake HTTP servers; no real model has been run**. Also wrote a hosted free-tier (Gemini) adapter with host/model allowlists, request budget and quota stop, likewise mock-tested; first live attempts against it exposed and fixed four defects (response-size limit, per-text rate limiting of embeddings, misclassified 429 errors, a retired default model).
 - Built a 64-question retrieval evaluation (Hit@3 and out-of-scope refusal) and an offline acceptance script; documented limits of every metric.
 
 ## Do NOT write (not verified)

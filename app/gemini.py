@@ -30,9 +30,13 @@ from .ollama import ModelUnavailable, count
 
 BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 ALLOWED_HOSTS = ("generativelanguage.googleapis.com",)
-# Listed as "Free of charge" on https://ai.google.dev/gemini-api/docs/pricing (checked 2026-10-26).
-# Anything else needs an explicit, deliberate edit here.
-FREE_MODELS = {"gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-embedding-001", "gemini-embedding-2"}
+# "Free of charge" on https://ai.google.dev/gemini-api/docs/pricing (re-checked 2026-10-26). The 2.5
+# generation models are kept but are restricted to projects that already used them (a new project
+# gets HTTP 404): https://ai.google.dev/gemini-api/docs/deprecations recommends gemini-3.5-flash-lite
+# or gemini-3.8-flash for new projects. Anything not listed needs an explicit, deliberate edit here.
+FREE_MODELS = {"gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite",
+               "gemini-2.5-flash", "gemini-2.5-flash-lite",
+               "gemini-embedding-001", "gemini-embedding-2"}
 MAX_REQUESTS = int(os.getenv("GEMINI_MAX_REQUESTS", "150"))
 MAX_RESPONSE_BYTES = 3_000_000
 
@@ -60,7 +64,8 @@ CACHE_ENABLED = os.getenv("GEMINI_EMBED_CACHE", "on").lower() != "off"
 CACHE_PATH = Path(os.getenv("EMBEDDING_CACHE_PATH", str(ROOT / "runtime" / "embedding_cache.db")))
 
 _lock = threading.Lock()
-_state = {"requests": 0, "stopped": None, "embed_texts": 0, "embed_next_at": 0.0}
+_state = {"requests": 0, "stopped": None, "embed_texts": 0, "embed_next_at": 0.0, "last_error": None}
+_no_thinking_config = set()  # models whose server rejected thinkingConfig once
 
 
 def _now() -> float:
@@ -81,7 +86,8 @@ _OPENER = build_opener(_NoRedirect)
 
 def reset_budget():
     with _lock:
-        _state.update(requests=0, stopped=None, embed_texts=0, embed_next_at=0.0)
+        _state.update(requests=0, stopped=None, embed_texts=0, embed_next_at=0.0, last_error=None)
+        _no_thinking_config.clear()
 
 
 def requests_made() -> int:
@@ -90,6 +96,11 @@ def requests_made() -> int:
 
 def embed_texts_sent() -> int:
     return _state["embed_texts"]
+
+
+def last_error():
+    """The last failure message (key already scrubbed), for reports."""
+    return _state["last_error"]
 
 
 def stopped_reason():
@@ -175,17 +186,28 @@ def _send(method: str, path: str, payload, timeout: int):
                 # "billing" or "plan" without the project having any billing problem.
                 kind = "daily quota" if _is_daily_quota(error, body) else "per-minute rate limit"
                 _state["stopped"] = f"HTTP 429 {kind}; stopped without retrying"
-                raise ModelUnavailable(f"HTTP 429 from Gemini ({kind}, not an auth/billing error): {body[:200]}") from exc
+                _fail(f"HTTP 429 from Gemini ({kind}, not an auth/billing error): {body[:400]}", exc)
             if exc.code in (401, 403) or status in ("PERMISSION_DENIED", "UNAUTHENTICATED", "FAILED_PRECONDITION"):
                 _state["stopped"] = f"HTTP {exc.code} (auth/billing); not retrying"
-                raise ModelUnavailable(f"HTTP {exc.code} from Gemini (auth or billing): {body[:200]}") from exc
+                _fail(f"HTTP {exc.code} from Gemini (auth or billing): {body[:400]}", exc)
+            if exc.code == 404 and "generateContent" in path:
+                # e.g. "This model models/gemini-2.5-flash is no longer available to new users": retrying
+                # or looping over cases would only burn requests.
+                _state["stopped"] = "HTTP 404 model not available to this project; choose a current model"
+                _fail(f"HTTP 404 from Gemini (model not available to this project; for a new project use "
+                      f"gemini-3.5-flash-lite or gemini-3.8-flash): {body[:400]}", exc)
             if exc.code in (500, 502, 503, 504) and attempt == 1:
                 _sleep(5)  # one retry for a transient server error, nothing more
                 continue
-            raise ModelUnavailable(f"HTTP {exc.code} from Gemini: {body[:200]}") from exc
+            _fail(f"HTTP {exc.code} from Gemini: {body[:400]}", exc)
         except (URLError, TimeoutError, ValueError, OSError, HTTPException) as exc:
-            raise ModelUnavailable(_scrub(str(exc))) from exc
+            _fail(_scrub(str(exc)), exc)
     raise ModelUnavailable("Gemini request failed")
+
+
+def _fail(message: str, cause):
+    _state["last_error"] = message
+    raise ModelUnavailable(message) from cause
 
 
 def list_models(settings) -> list[str]:
@@ -197,13 +219,42 @@ def list_models(settings) -> list[str]:
     return [m.get("name", "").removeprefix("models/") for m in models if isinstance(m, dict)]
 
 
+def list_model_details(settings) -> list[dict]:
+    """[{name, methods}] for every model the key can see (read-only, one request)."""
+    data = _send("GET", "/models?pageSize=200", None, min(settings.timeout_seconds, 20))
+    models = data.get("models")
+    if not isinstance(models, list):
+        raise ModelUnavailable("Gemini returned an unexpected models response")
+    return [{"name": m.get("name", "").removeprefix("models/"),
+             "methods": [x for x in (m.get("supportedGenerationMethods") or []) if isinstance(x, str)]}
+            for m in models if isinstance(m, dict)]
+
+
 def _generation_config(settings, model: str, json_output: bool) -> dict:
     config = {"temperature": 0.2, "maxOutputTokens": settings.max_output_tokens}
     if json_output:
         config["responseMimeType"] = "application/json"
-    if "flash" in model:
+    if model.startswith("gemini-2.5-flash"):
         config["thinkingConfig"] = {"thinkingBudget": 0}  # thinking tokens would eat the output budget
+    elif model.startswith("gemini-3") and model not in _no_thinking_config:
+        # Gemini 3 uses a thinking *level*; leave headroom because thought tokens may count as output.
+        config["thinkingConfig"] = {"thinkingLevel": "minimal"}
+        config["maxOutputTokens"] = max(settings.max_output_tokens, 1024)
     return config
+
+
+def _generate(settings, model: str, payload: dict):
+    """POST generateContent; if the server rejects thinkingConfig, retry ONCE without it."""
+    path = f"/models/{model}:generateContent"
+    try:
+        return _send("POST", path, payload, settings.timeout_seconds)
+    except ModelUnavailable as exc:
+        config = payload.get("generationConfig", {})
+        if "thinkingConfig" in config and "HTTP 400" in str(exc) and "thinking" in str(exc).lower():
+            _no_thinking_config.add(model)
+            stripped = {**payload, "generationConfig": {k: v for k, v in config.items() if k != "thinkingConfig"}}
+            return _send("POST", path, stripped, settings.timeout_seconds)
+        raise
 
 
 def _parse(data: dict):
@@ -215,6 +266,8 @@ def _parse(data: dict):
         raise ModelUnavailable("Gemini returned no candidates")
     content = candidates[0].get("content")
     parts = content.get("parts") if isinstance(content, dict) else None
+    if not parts and candidates[0].get("finishReason"):
+        raise ModelUnavailable(f"Gemini returned no content (finishReason={candidates[0]['finishReason']})")
     usage = data.get("usageMetadata") if isinstance(data.get("usageMetadata"), dict) else {}
     return (parts if isinstance(parts, list) else []), count(usage.get("promptTokenCount")), count(usage.get("candidatesTokenCount"))
 
@@ -225,7 +278,7 @@ def chat(settings, system, user, json_output=False):
     payload = {"systemInstruction": {"parts": [{"text": system}]},
                "contents": [{"role": "user", "parts": [{"text": user}]}],
                "generationConfig": _generation_config(settings, model, json_output)}
-    data = _send("POST", f"/models/{model}:generateContent", payload, settings.timeout_seconds)
+    data = _generate(settings, model, payload)
     parts, tokens_in, tokens_out = _parse(data)
     answer = "".join(p.get("text", "") for p in parts if isinstance(p, dict) and isinstance(p.get("text"), str)).strip()
     if not answer:
@@ -319,7 +372,7 @@ def chat_with_tools(settings, messages, tools):
                "generationConfig": _generation_config(settings, model, False)}
     if system:
         payload["systemInstruction"] = system
-    data = _send("POST", f"/models/{model}:generateContent", payload, settings.timeout_seconds)
+    data = _generate(settings, model, payload)
     parts, tokens_in, tokens_out = _parse(data)
     text = "".join(p.get("text", "") for p in parts if isinstance(p, dict) and isinstance(p.get("text"), str))
     calls = [{"function": {"name": p["functionCall"].get("name", ""), "arguments": p["functionCall"].get("args") or {}},

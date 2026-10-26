@@ -20,7 +20,7 @@ class Settings:
     ollama_url: str = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
     ollama_model: str = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
     embedding_provider: str = os.getenv("EMBEDDING_PROVIDER", "off").lower()
-    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
     # The model name tags stored vectors, so it is the one used by retrieval for any provider.
     embedding_model: str = os.getenv("EMBEDDING_MODEL") or (
         os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")

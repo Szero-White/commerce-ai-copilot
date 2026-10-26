@@ -476,16 +476,23 @@ def test_the_word_billing_alone_does_not_stop_the_process(tmp_path, monkeypatch)
 def smoke_env(tmp_path, monkeypatch):
     monkeypatch.setenv('GEMINI_CONFIRM_FREE_TIER', 'yes')
     monkeypatch.setattr(live_eval, 'Settings', lambda: replace(
-        Settings(), llm_provider='gemini', embedding_provider='gemini', gemini_model='gemini-2.5-flash',
+        Settings(), llm_provider='gemini', embedding_provider='gemini', gemini_model='gemini-3.5-flash-lite',
         embedding_model='gemini-embedding-001'))
     monkeypatch.setattr(live_eval, 'REPORT_DIR', tmp_path / 'reports')
     monkeypatch.setattr(live_eval, 'DB_PATH', tmp_path / 'live.db')
     monkeypatch.setattr(live_eval, 'PACE_SECONDS', 0)
 
 
+MODEL_LIST = {'models': [
+    {'name': 'models/gemini-3.5-flash-lite', 'supportedGenerationMethods': ['generateContent', 'countTokens']},
+    {'name': 'models/gemini-2.5-flash', 'supportedGenerationMethods': ['generateContent']},
+    {'name': 'models/gemini-embedding-001', 'supportedGenerationMethods': ['embedContent', 'batchEmbedContents']},
+    {'name': 'models/some-paid-model', 'supportedGenerationMethods': ['generateContent']}]}
+
+
 def smoke_handler(method, path, body):
     if method == 'GET':
-        return 200, {'models': [{'name': 'models/gemini-2.5-flash'}, {'name': 'models/gemini-embedding-001'}]}
+        return 200, MODEL_LIST
     return text_reply('Mặt bàn 120 x 60 cm [PRD-101]', 40, 9)
 
 
@@ -519,9 +526,75 @@ def test_full_mode_needs_the_embedding_provider(tmp_path, monkeypatch, smoke_env
 
 def test_smoke_stops_on_429_and_records_why(tmp_path, monkeypatch, smoke_env):
     def handler(method, path, body):
-        return (200, {'models': [{'name': 'models/gemini-2.5-flash'}]}) if method == 'GET' else (429, BILLING_WORDING)
+        return (200, MODEL_LIST) if method == 'GET' else (429, BILLING_WORDING)
     with fake_gemini(handler, monkeypatch) as seen:
         assert live_eval.main([]) == 1
     report = json.loads((tmp_path / 'reports' / 'live_eval_gemini_smoke.json').read_text(encoding='utf-8'))
     assert 'per-minute rate limit' in report['stopped_early'] and report['requests_made'] == 2
     assert len(seen) == 2   # the model list and the first generation; nothing retried, nothing switched
+
+
+# model availability (found by the first smoke run: gemini-2.5-* is closed to new projects) ----------
+GONE = {'error': {'code': 404, 'status': 'NOT_FOUND',
+                  'message': 'This model models/gemini-2.5-flash is no longer available to new users.'}}
+
+
+def test_404_on_generate_stops_at_once_with_a_useful_message(tmp_path, monkeypatch):
+    with fake_gemini(lambda *a: (404, GONE), monkeypatch) as seen:
+        with pytest.raises(ModelUnavailable, match='gemini-3.5-flash-lite') as caught:
+            gemini.chat(cfg(tmp_path, gemini_model='gemini-2.5-flash'), 's', 'u')
+        with pytest.raises(ModelUnavailable, match='disabled for this process'):
+            gemini.chat(cfg(tmp_path, gemini_model='gemini-2.5-flash'), 's', 'u')
+    assert 'no longer available to new users' in str(caught.value)      # the server's own words survive
+    assert len(seen) == 1 and 'no longer available' in gemini.last_error()
+
+
+def test_smoke_stops_after_the_first_404_and_records_it(tmp_path, monkeypatch, smoke_env):
+    def handler(method, path, body):
+        return (200, MODEL_LIST) if method == 'GET' else (404, GONE)
+    with fake_gemini(handler, monkeypatch) as seen:
+        assert live_eval.main([]) == 1
+    report = json.loads((tmp_path / 'reports' / 'live_eval_gemini_smoke.json').read_text(encoding='utf-8'))
+    assert len(seen) == 2 and report['requests_made'] == 2                # model list + ONE generation, then stop
+    assert 'HTTP 404' in report['stopped_early'] and 'no longer available' in report['last_gemini_error']
+    assert [c['id'] for c in report['rag_cases']] == ['dims']             # the loop did not go on
+
+
+def test_report_lists_only_free_allowlisted_models_the_key_can_call(tmp_path, monkeypatch, smoke_env):
+    with fake_gemini(smoke_handler, monkeypatch):
+        live_eval.main([])
+    report = json.loads((tmp_path / 'reports' / 'live_eval_gemini_smoke.json').read_text(encoding='utf-8'))
+    assert report['free_generation_models_visible'] == ['gemini-2.5-flash', 'gemini-3.5-flash-lite']
+    assert 'some-paid-model' not in json.dumps(report) and report['models_visible_to_key'] == 4
+
+
+def test_smoke_refuses_a_model_the_key_cannot_call_without_generating(tmp_path, monkeypatch, smoke_env, capsys):
+    monkeypatch.setattr(live_eval, 'Settings', lambda: replace(Settings(), llm_provider='gemini', gemini_model='gemini-3.8-flash'))
+    with fake_gemini(smoke_handler, monkeypatch) as seen:
+        assert live_eval.main([]) == 2
+    assert [r['method'] for r in seen] == ['GET']
+    assert 'gemini-3.5-flash-lite' in capsys.readouterr().out
+
+
+def test_gemini3_uses_thinking_level_and_falls_back_once_if_rejected(tmp_path, monkeypatch):
+    bad = (400, {'error': {'status': 'INVALID_ARGUMENT', 'message': 'Unknown field thinking_level'}})
+
+    def handler(method, path, body):
+        return bad if 'thinkingConfig' in body['generationConfig'] else text_reply('ok [X]')
+
+    with fake_gemini(handler, monkeypatch) as seen:
+        config = cfg(tmp_path, gemini_model='gemini-3.5-flash-lite')
+        assert gemini.chat(config, 's', 'u')[0] == 'ok [X]'
+        assert gemini.chat(config, 's', 'u')[0] == 'ok [X]'
+    first = seen[0]['body']['generationConfig']
+    assert first['thinkingConfig'] == {'thinkingLevel': 'minimal'} and first['maxOutputTokens'] >= 1024
+    assert len(seen) == 3                      # rejected, retried without it, then remembered for the next call
+    assert 'thinkingConfig' not in seen[1]['body']['generationConfig'] and 'thinkingConfig' not in seen[2]['body']['generationConfig']
+    assert gemini._state['stopped'] is None    # a 400 never disables the process
+
+
+def test_empty_candidate_reports_the_finish_reason(tmp_path, monkeypatch):
+    reply = (200, {'candidates': [{'finishReason': 'MAX_TOKENS', 'content': {'role': 'model'}}]})
+    with fake_gemini(lambda *a: reply, monkeypatch):
+        with pytest.raises(ModelUnavailable, match='MAX_TOKENS'):
+            gemini.chat(cfg(tmp_path, gemini_model='gemini-3.5-flash-lite'), 's', 'u')
