@@ -47,21 +47,23 @@ Demo-visible fixes in this round: extractive answers now cut at sentence boundar
 
 ## 4. Live (hosted) evaluation: one smoke run succeeded; the full evaluation has not run
 
-The owner created a Google AI Studio project (Free Tier, billing not set up), supplied a key through `run_gemini_live.ps1`, and ran `scripts/live_eval.py` three times (two full-mode attempts, then the smoke mode). The first two runs (full mode) and an initial smoke attempt produced no answer; the fourth run (smoke, `gemini-3.5-flash-lite`) did: 3 correct cited answers (AI-reviewed), 2 correct refusals without a model call, and 1 agent task whose final answer was rejected by the validator (reason not recorded in that run; an offline replay of the real tool output found a false-rejection bug, since fixed, but not yet re-run against the model). Details, token counts and the latency caveat are in [LIVE_EVALUATION_GEMINI.md](LIVE_EVALUATION_GEMINI.md). **Still no measurements of hybrid retrieval quality, the 0.38 cosine threshold, faithfulness on a useful sample, or agent final-answer reliability.** What the attempts did show (hosted `gemini-embedding-001` / `gemini-2.5-flash`, synthetic data, free tier):
+Hosted Google Gemini free tier, synthetic data, key supplied by the owner through `run_gemini_live.ps1`. Five runs were needed: runs 1–2 (full mode) and run 3 (smoke) produced no answers; run 4 (smoke) produced correct RAG answers but its agent answer was rejected; run 5 (smoke, after the fixes) passed everything. Full details, per-case labels, tokens and latency caveats: [LIVE_EVALUATION_GEMINI.md](LIVE_EVALUATION_GEMINI.md).
 
-| Observation | Evidence |
+**Result of the final run, run 5** (`gemini-3.5-flash-lite`, lexical retrieval, 7 requests, 0 texts embedded): 3 answerable questions answered correctly with citations (AI-reviewed; negated policy preserved; injected instruction in a poisoned record not repeated), 2 out-of-scope questions refused before any model call, and 1 tool-calling agent task that used `lookup_product` and `search_policy` and returned a cited answer that passed the evidence validator. One run, one small hand-written set.
+
+**What the earlier attempts exposed** (all fixed, pinned by tests that use fake servers only):
+
+| Observation | Cause and fix |
 |---|---|
-| The key works and sees 60 models; embeddings are 3072-dimensional; indexing the 16 documents took about 3.5 s | report of both runs |
-| Run 1 stopped after 4 requests: a 60-text batch returned >3 MB JSON, over the adapter's 3 MB read cap | adapter bug, fixed (chunking + explicit truncation error) |
-| Run 2 stopped after 9 HTTP requests with HTTP 429. AI Studio showed embedding RPM peak 96/100 and RPD 172/1K: **quota is counted per text, not per request**; 16 documents plus 16-text batches exceeded 100 texts/minute | adapter bug, fixed (per-text rate limiter, 60 texts/min, batches of 8 spaced 8 s, text budget, on-disk cache) |
-| That 429's body says "check your plan and billing details"; the old adapter therefore labelled it "auth or billing" | misclassification, fixed (HTTP status decides; 429 is always rate/quota; billing only for 401/403/FAILED_PRECONDITION) |
+| Run 1 stopped after 4 requests: a 60-text embedding batch returned more than 3 MB of JSON | the adapter's 3 MB read cap; fixed with chunking and an explicit truncation error |
+| Run 2 stopped after 9 requests with HTTP 429; AI Studio showed embedding RPM 96/100 and RPD 172/1K | quota is counted **per text**, not per request; fixed with a per-text rate limiter (60 texts/min, batches of 8 spaced 8 s), a text budget and an on-disk cache |
+| That 429 was labelled "auth or billing" because its body said "check your plan and billing details" | classification now starts from the HTTP status; 429 is always rate/quota |
+| Run 3: every generation failed with HTTP 404 "models/gemini-2.5-flash is no longer available" | the 2.5 models are closed to new projects (my configuration error); allowlist updated, default `gemini-3.5-flash-lite`, a 404 on generation stops the run |
+| Run 4: the agent's final answer was rejected by our validator (the draft was not saved) | a false rejection: document IDs written in prose ("Sản phẩm PRD-101") counted as unsupported numbers, and grouped citations were not read; fixed generally, the last agent turn is text-only |
 
-| Smoke run (3 RAG questions + 1 agent task, no embeddings) made 5 requests and every generation failed with HTTP 404 "This model models/gemini-2.5-flash is no longer available…". Per Google's deprecations page, the 2.5 generation models are restricted to projects that used them before; new projects should use `gemini-3.5-flash-lite` or `gemini-3.8-flash`. This was my configuration error (I chose models from a pricing-page snapshot) | config bug, fixed: free allowlist updated, default model `gemini-3.5-flash-lite`, a 404 on generation now stops the run at once, the report records the server's verbatim error and the free models this key can call, Gemini-3 thinking settings handled with a one-time fallback |
-| In the same smoke run the 2 out-of-scope questions (weather, coupon code) were correctly refused without any model call, and the 3 answerable questions retrieved the right document lexically (`PRD-101`, `POD-POL-201`, the synthetic poisoned `PRD-999`) before the generation step failed; the system degraded to labelled extractive output (`llm_unavailable_extractive`, `agent_llm_unavailable`) rather than inventing answers | offline behaviour confirmed with a real provider error |
+**Still no measurements of** hybrid retrieval with real embeddings, the 0.38 cosine threshold, faithfulness on a useful sample, agent reliability across tasks, campaign drafts from a real model, or any local model. The full mode (`--full`) has never run.
 
-Tests that pin these fixes use fake servers only (`tests/test_gemini_adapter.py`). `live_eval` now defaults to a **smoke** mode (lexical retrieval + Gemini generation for 3 RAG questions, 1 agent task, about 7 requests, no embeddings) and records any stop reason in the report. The full mode is available but has not run.
-
-Tier note: Google offers no API to verify a key's billing status; the free-tier statement is the owner's attestation from the AI Studio page.
+Tier note: Google offers no API to verify a key's billing status; the free-tier statement is the owner's attestation from the AI Studio page. The per-case labels were written by an AI, not an independent person.
 
 ## 5. Reproduce
 
