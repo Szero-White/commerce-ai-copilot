@@ -1,33 +1,36 @@
 # Evaluation report — v3.0 (offline, no LLM)
 
-Everything below was produced by running the code in this repository on 2026-10-26 (Windows 11, Python 3.14.6, no GPU used). **No language model or embedding model was run.** Do not read these numbers as answer quality.
+Produced by running the code in this repository on 2026-10-26 (Windows 11, Python 3.14.6, no GPU). **No language model or embedding model was run, and no request was sent to any hosted API.** Do not read these numbers as answer quality.
 
 ## 1. Test suite
 
 | Check | Result |
 |---|---|
-| `python -m pytest -q` | **127 passed** |
-| `python -m scripts.portfolio_check` | **8/8** offline workflow checks |
-| Per-commit check (each git commit exported and tested alone) | 37 → 37 → 90 → 109 → 127 passed |
-| HTTP smoke test against live uvicorn (no model) | `/`, `/assets/*`, health, products, chat, campaign, triage, agent, evaluation, metrics, 403 admin, 422 validation all as expected |
-| Browser rendering | **Not tested** (no browser automation). `node --check web/app.js` passes and all 48 element IDs used by the script exist in the HTML |
+| `python -m pytest -q` | **165 passed** |
+| `python -m scripts.portfolio_check` | **8/8** offline workflow checks (no longer needs `ignore_cleanup_errors`: SQLite connections are now closed) |
+| HTTP smoke test against live uvicorn, LLM off | `/`, health, chat (incl. the former leaks), campaign, triage, agent (disabled), evaluation, metrics: all as expected |
+| Browser rendering | **Not tested** (no browser tool available). `node --check web/app.js` passes and all element IDs used by the script exist in the HTML |
 
-Test kinds: *offline deterministic* (retrieval, triage, guards), *real sockets + fake model* (`tests/test_ollama_resilience.py`, `tests/test_release.py`), *monkeypatched LLM* (answer, campaign, agent). A passing mocked test proves control flow only.
+Test kinds: *offline deterministic* (retrieval, triage, guards, connection closing), *real sockets + fake server* (`test_ollama_resilience.py`, `test_gemini_adapter.py`, `test_release.py`), *monkeypatched LLM* (answer, campaign, agent). A passing mocked test proves control flow only.
 
 ## 2. Retrieval evaluation (lexical BM25 + relevance gate)
 
 | Set | Size | Result |
 |---|---|---|
-| Positive questions, metric Hit@3 | 31 | 31/31 = 1.00 |
-| Out-of-scope questions, "correctly returns nothing" | 33 | 31/33 = 0.94 |
+| Development positives, Hit@3 | 31 | 31/31 |
+| Development out-of-scope ("correctly returns nothing") | 33 | 32/33 |
+| **Held-out** positives (written before the last logic change) | 18 | 18/18 (first measurement 18/18) |
+| **Held-out** out-of-scope | 12 | 12/12 (first measurement 11/12) |
 
-Still leaking: "Bạn có bán điều hòa không?" (matches the word "điều" in a warranty clause) and "Mã giảm giá tháng này là gì?" (returns the marketing-rules document that mentions discounts). They are kept in the set on purpose.
+Known remaining miss: "Địa chỉ cửa hàng ở đâu?" returns the privacy policy (it contains "địa chỉ"). It is kept in the set. The held-out first-measurement miss was "Thời gian bảo hành của máy lạnh là bao lâu?" (matched the warranty sentence of a lamp).
 
-Before the gate, 6 of 24 development negatives leaked (weather, bitcoin, motorbike warranty, "giảm 5%", employee count…). The weather query is blocked by a small out-of-scope phrase list because a lexical index cannot know that "thời tiết" only matches the unrelated words "thời gian" and "tiết kiệm".
+**What changed since the previous report.** The two earlier leaks ("Bạn có bán điều hòa không?", "Mã giảm giá tháng này là gì?") are now rejected by general rules, and the hard-coded out-of-scope phrase list was removed:
 
-**Validity limits.** The 22 development positives and 24 development negatives were used to choose the coverage threshold (0.5) and term weights. A further 9 positives and 10 negatives were written afterwards as a held-out check: all 9 positives passed after one more rule (English plural tolerance, added after one miss), and 2 of the 10 negatives leaked. Because of the rule added after seeing the miss and because the held-out questions were then merged into the evaluation set, **the final numbers are not an unbiased estimate.** The sets are small and written by one person on a 15-document knowledge base.
+1. matched query terms must lie within 8 tokens of each other (scattered matches such as "điều … hòa" are coincidence);
+2. a small domain synonym table (kích thước→cm, giá→VND, màu→color…) lets legitimate paraphrases match, which allowed raising the IDF-coverage threshold from 0.5 to 0.6;
+3. English inflections match (changed/change, sizes/size), and question-frame words (áp dụng, phải, come, because…) are stopwords, except accented forms whose unaccented spelling is a product word (tủ, đèn, tải).
 
-Offline cost: the whole 64-query evaluation took 121 ms in one measured run on SQLite (no tokens, single run, not a benchmark).
+**Validity limits (read before quoting).** The held-out set was *not* clean after the first look: stopwords and the inflection rule were added after seeing held-out misses, so the "after" numbers are a second look, not an unbiased estimate. All sets are small, written by one person, on a 15-document knowledge base. The coverage threshold, proximity window and synonym table were chosen on these sets. Offline cost: the 64-query development evaluation took about 120 ms in one run (not a benchmark).
 
 ## 3. Guard evaluation (unit/regression level)
 
@@ -38,11 +41,13 @@ Offline cost: the whole 64-query evaluation took 121 ms in one measured run on S
 | Affirming a negated policy | "You can return a personalized item" vs "…not eligible for return"; "được hoàn tiền" vs "hoàn tiền thật chưa được tích hợp" |
 | Audience injection | digits, promises, `[ID]`, newlines, "ignore previous instructions", "bỏ qua chỉ thị" |
 
-Known bypasses: wording that is not in the lists; a sentence that mixes a true and a false clause and contains a negation word; false statements without numbers or listed phrases; URLs in answers.
+Known bypasses: wording not in the lists; a sentence mixing a true and a false clause that contains a negation word; false statements without numbers or listed phrases; URLs in answers.
 
-## 4. What this report does NOT show
+Demo-visible fixes in this round: extractive answers now cut at sentence boundaries (the "not eligible for free return" exclusion of POL-002 was previously cut off); campaign templates no longer include internal notes ("Do not claim stock…"), SKUs or prices; the agent's `search_policy` tool is no longer starved by product hits.
 
-Answer faithfulness, hallucination rate, semantic retrieval quality, latency or token use of a real model, tool-calling reliability of any model, behaviour of Ollama's context window, or anything about real customers. See [LIVE_LLM_VERIFICATION_OPTIONS.md](LIVE_LLM_VERIFICATION_OPTIONS.md) for how to obtain that evidence.
+## 4. Live (hosted) evaluation: NOT RUN
+
+A Gemini free-tier adapter and `scripts/live_eval.py` exist and are mock-tested, but **no live call was made**. The run requires an attestation that the API key's project has no billing; Google offers no API to verify this, and the owner answered "not sure / may have billing", so the run was deliberately not started. Blocker and safe way to run it: [LIVE_LLM_VERIFICATION_OPTIONS.md](LIVE_LLM_VERIFICATION_OPTIONS.md). Until then there are **no** measurements of answer faithfulness, hybrid retrieval quality, the 0.38 similarity threshold, latency, token use or tool-calling reliability.
 
 ## 5. Reproduce
 

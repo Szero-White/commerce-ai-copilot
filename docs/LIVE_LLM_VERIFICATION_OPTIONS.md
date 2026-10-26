@@ -1,6 +1,23 @@
 # Verifying a real LLM without a heavy local model
 
-**Status: proposals only.** Nothing here has been signed up for, installed, downloaded or connected. Facts about free tiers come from web searches on 2026-10-26, several from third-party blogs that disagree with each other; **confirm limits and the "no credit card" claim on each provider's own signup page before relying on them.**
+## Status update (2026-10-26, later session)
+
+- Option **C (Google Gemini API free tier)** was chosen and **implemented**: `app/gemini.py`, `app/llm.py`, `scripts/live_eval.py`, 25 mock tests. The official pricing page lists `gemini-2.5-flash`, `gemini-2.5-flash-lite` and `gemini-embedding-2` (plus newer Flash models) as free of charge and says free-tier content may be used to improve Google products (so: synthetic data only). The adapter allowlist is `gemini-2.5-flash`, `gemini-2.5-flash-lite`, `gemini-embedding-001`, `gemini-embedding-2`; verify the exact IDs with `/api/health?probe=true` first.
+- **Live run was NOT performed.** Google has no endpoint that tells a key's billing status, and the owner could not confirm the project is billing-free. Running anyway could incur charges, so no request was ever sent.
+- To unblock safely: create a *new* key in a *new* Google AI Studio project with no billing account linked (AI Studio shows the plan next to the key), then in a fresh terminal:
+
+```powershell
+$env:LLM_PROVIDER="gemini"; $env:EMBEDDING_PROVIDER="gemini"
+$env:GEMINI_API_KEY="<paste key here, in the terminal only>"
+$env:GEMINI_CONFIRM_FREE_TIER="yes"        # your attestation
+.venv\Scripts\python -m scripts.live_eval   # about 40 requests, paced, stops on quota/billing
+```
+
+  The report is written to `reports/live_eval_gemini.json` (git-ignored, no key inside). It records provider/model, latency, tokens, retrieval with and without embeddings, cosine calibration for the 0.38 threshold, 12 RAG cases (including question and document injection), 2 campaign drafts and 3 agent tasks. A reviewer must label each answer supported / unsupported before any number is quoted.
+
+---
+
+**Original status: proposals only.** Nothing here had been signed up for, installed, downloaded or connected. Facts about free tiers come from web searches on 2026-10-26, several from third-party blogs that disagree with each other; **confirm limits and the "no credit card" claim on each provider's own signup page before relying on them.**
 
 The project rule is currently *local only*: `app/ollama.py` rejects every non-loopback host, so using a hosted API is a deliberate policy change that needs your explicit approval and a small provider adapter (host allowlist, key from an environment variable, never committed). Only synthetic data would be sent. A report from a hosted model must be labelled `provider: hosted-free`, never "local".
 
