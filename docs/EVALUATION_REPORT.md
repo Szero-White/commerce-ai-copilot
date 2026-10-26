@@ -9,7 +9,8 @@ Produced by running the code in this repository on 2026-10-26 (Windows 11, Pytho
 | `python -m pytest -q` | **199 passed** |
 | `python -m scripts.portfolio_check` | **8/8** offline workflow checks (no longer needs `ignore_cleanup_errors`: SQLite connections are now closed) |
 | HTTP smoke test against live uvicorn, LLM off | `/`, health, chat (incl. the former leaks), campaign, triage, agent (disabled), evaluation, metrics: all as expected |
-| Browser rendering | **Not tested** (no browser tool available). `node --check web/app.js` passes and all element IDs used by the script exist in the HTML |
+| Browser acceptance (real Chrome, headless, driven over the DevTools protocol; server with the LLM off, synthetic data) | **45/46 checks passed**: page load and API status, all 6 navigation targets and deep links, RAG (preset and typed questions, citations, refusals, diagnostics), support triage, agent page (honest "disabled" state), campaign drafts (including an injected audience), evaluation run (31/31, 32/33), no horizontal scroll at 390 px on all 6 pages, no JavaScript exceptions or console errors. The one failure is cosmetic: `/favicon.ico` returns 404. Desktop and 390 px screenshots were inspected by eye. **Not tested:** Firefox/Safari/Edge, real touch devices, accessibility tooling, and the UI with a real LLM enabled (Gemini output was never viewed in the browser) |
+| Fresh clone check | `git clone` into a new folder: 199 passed, 8/8 acceptance, server and `/docs` answer HTTP 200 (existing venv; a Linux/CI run and Docker were not executed) |
 
 Test kinds: *offline deterministic* (retrieval, triage, guards, connection closing), *real sockets + fake server* (`test_ollama_resilience.py`, `test_gemini_adapter.py`, `test_release.py`), *monkeypatched LLM* (answer, campaign, agent). A passing mocked test proves control flow only.
 

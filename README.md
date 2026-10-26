@@ -21,15 +21,21 @@
 | Real embeddings / hybrid retrieval, the 0.38 threshold, faithfulness beyond 3 answers, agent reliability beyond 1 task, any local model | **NOT verified** | Needs a real model: see [live verification options](docs/LIVE_LLM_VERIFICATION_OPTIONS.md) |
 | LangChain / LlamaIndex / LangGraph, vector DB, Shopify / Ads APIs, auth, deployment | **Not implemented** | |
 
-## Quick start (Windows, no model required)
+## Quick start (no model, no API key required)
+
+Requires Git and **Python 3.10+** (developed and tested on Python 3.14 / Windows 11; the grammar was checked against 3.9–3.11, and CI uses 3.11 on Ubuntu, which the author has not run). A browser UI check was done with Chrome. Docker and the Linux/macOS commands below are provided but **untested by the author**.
 
 ```powershell
+git clone <your-repo-url> commerce-ai-copilot
+cd commerce-ai-copilot
 python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements-dev.txt
 .venv\Scripts\python -m pytest -q                       # 199 passed
 .venv\Scripts\python -m scripts.portfolio_check         # 8/8 offline acceptance
 .venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
+
+Linux/macOS (untested): `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements-dev.txt`, then the same `python -m pytest -q`, `python -m scripts.portfolio_check` and `python -m uvicorn ...` commands. On Windows you can also double-click `run_windows.bat` (it installs only `requirements.txt` and starts the app). The first start creates `runtime/lab.db` (git-ignored).
 
 Open http://127.0.0.1:8000 (UI) or http://127.0.0.1:8000/docs (Swagger). By default `LLM_PROVIDER=off` and `EMBEDDING_PROVIDER=off`, so `/api/chat` returns **extractive, cited passages — this is retrieval, not generative RAG**.
 
