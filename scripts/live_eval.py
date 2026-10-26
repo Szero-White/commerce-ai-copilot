@@ -114,10 +114,8 @@ def main() -> int:
         queries = list(dict.fromkeys([c["question"] for c in RAG_CASES] + [x["question"] for x in held["positive"]]
                                      + held["negative"] + [x["question"] for x in dev_pos] + [x["question"] for x in dev_neg]))
         cache = {}
-        for i in range(0, len(queries), 60):
-            batch = queries[i:i + 60]
-            for text, vector in zip(batch, gemini.embed(settings, batch)):
-                cache[text] = vector
+        for text, vector in zip(queries, gemini.embed(settings, queries)):  # chunked inside the adapter
+            cache[text] = vector
         real_embed = retrieval.embed
         retrieval.embed = lambda s, texts: [cache[t] for t in texts] if all(t in cache for t in texts) else real_embed(s, texts)
 

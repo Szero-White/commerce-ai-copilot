@@ -25,6 +25,9 @@ ALLOWED_HOSTS = ("generativelanguage.googleapis.com",)
 # Anything else needs an explicit, deliberate edit here.
 FREE_MODELS = {"gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-embedding-001", "gemini-embedding-2"}
 MAX_REQUESTS = int(os.getenv("GEMINI_MAX_REQUESTS", "150"))
+MAX_RESPONSE_BYTES = 3_000_000
+# One 3072-dimension vector is about 60 KB of JSON; 16 per request stays far below the cap.
+EMBED_BATCH = 16
 
 _lock = threading.Lock()
 _state = {"requests": 0, "stopped": None}
@@ -85,7 +88,10 @@ def _send(method: str, path: str, payload, timeout: int):
                       headers={"Content-Type": "application/json", "x-goog-api-key": _key()})
         try:
             with _OPENER.open(req, timeout=timeout) as response:
-                data = json.loads(response.read(3_000_000).decode("utf-8"))
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(raw) > MAX_RESPONSE_BYTES:
+                raise ModelUnavailable(f"Gemini response larger than {MAX_RESPONSE_BYTES} bytes; refusing to parse a truncated body")
+            data = json.loads(raw.decode("utf-8"))
             if not isinstance(data, dict):
                 raise ModelUnavailable("Gemini returned unexpected JSON (not an object)")
             return data
@@ -166,18 +172,20 @@ def chat(settings, system, user, json_output=False):
 def embed(settings, texts):
     model = settings.embedding_model
     _check_model(model)
-    payload = {"requests": [{"model": f"models/{model}", "content": {"parts": [{"text": t}]}} for t in texts]}
-    data = _send("POST", f"/models/{model}:batchEmbedContents", payload, settings.timeout_seconds)
-    items = data.get("embeddings")
-    if not isinstance(items, list) or len(items) != len(texts):
-        raise ModelUnavailable("Gemini returned invalid embeddings")
     vectors = []
-    for item in items:
-        values = item.get("values") if isinstance(item, dict) else None
-        if (not isinstance(values, list) or not values
-                or any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in values)):
-            raise ModelUnavailable("Gemini returned a malformed embedding vector")
-        vectors.append(values)
+    for start in range(0, len(texts), EMBED_BATCH):
+        chunk = texts[start:start + EMBED_BATCH]
+        payload = {"requests": [{"model": f"models/{model}", "content": {"parts": [{"text": x}]}} for x in chunk]}
+        data = _send("POST", f"/models/{model}:batchEmbedContents", payload, settings.timeout_seconds)
+        items = data.get("embeddings")
+        if not isinstance(items, list) or len(items) != len(chunk):
+            raise ModelUnavailable("Gemini returned invalid embeddings")
+        for item in items:
+            values = item.get("values") if isinstance(item, dict) else None
+            if (not isinstance(values, list) or not values
+                    or any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in values)):
+                raise ModelUnavailable("Gemini returned a malformed embedding vector")
+            vectors.append(values)
     if len({len(v) for v in vectors}) != 1:
         raise ModelUnavailable("Gemini returned inconsistent embedding dimensions")
     return vectors

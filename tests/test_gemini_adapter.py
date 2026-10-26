@@ -262,3 +262,20 @@ def test_health_probe_for_gemini(tmp_path, monkeypatch):
         body = TestClient(create_app(settings=config)).get('/api/health', params={'probe': 'true'}).json()
     assert body['providers']['gemini'] == {'reachable': True, 'llm_model_available': True, 'embedding_model_available': True}
     assert body['llm']['hosted'] is True
+
+
+def test_embed_splits_large_inputs_into_small_requests(tmp_path, monkeypatch):
+    reply = lambda m, p, body: (200, {'embeddings': [{'values': [0.5, 0.5]} for _ in body['requests']]})
+    with fake_gemini(reply, monkeypatch) as seen:
+        config = cfg(tmp_path, embedding_provider='gemini', embedding_model='gemini-embedding-001')
+        vectors = gemini.embed(config, [f'text {i}' for i in range(40)])
+    assert len(vectors) == 40
+    assert [len(r['body']['requests']) for r in seen] == [16, 16, 8]  # a 60-text batch overflowed the 3 MB cap live
+
+
+def test_truncated_oversized_response_is_a_clear_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(gemini, 'MAX_RESPONSE_BYTES', 200)
+    big = {'candidates': [{'content': {'parts': [{'text': 'x' * 1000}]}}]}
+    with fake_gemini(lambda *a: (200, big), monkeypatch):
+        with pytest.raises(ModelUnavailable, match='larger than'):
+            gemini.chat(cfg(tmp_path), 's', 'u')
