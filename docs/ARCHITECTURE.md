@@ -38,6 +38,20 @@
 - **Local by default, hosted only by explicit choice.** With `LLM_PROVIDER=off|ollama` nothing leaves the machine and the Ollama adapter refuses other hosts. `gemini` is an explicit opt-in with its own adapter; it must only ever receive synthetic data because free-tier content may be used by the provider.
 - **SQLite + brute-force cosine** is fine for 15 documents; pgvector or a vector DB would be the next step at scale. Not implemented.
 
+## Ngôn ngữ giao diện / UI language
+
+The web UI (`web/`) is entirely Vietnamese; international technical terms (AI, RAG, API, Agent, BM25, Token, Hit@3, JSON, LLM) are kept. The README stays in English. Demo data and test questions that are deliberately English (e.g. the "personalized item" question, the support message, the English policy text) are not translated. **The API contract is unchanged**: the UI translates only for display (`web/app.js`), shows the raw code in a tooltip and in a "Mã kỹ thuật" line, and the tests never depend on the display labels.
+
+| Raw API code | Vietnamese label in the UI |
+|---|---|
+| `extractive_demo` / `no_evidence` / `llm_rag_cited` | Trích xuất tài liệu / Không đủ bằng chứng / LLM có dẫn nguồn |
+| `llm_citation_rejected_extractive` / `llm_unavailable_extractive` | LLM bị từ chối kiểm tra / LLM không khả dụng |
+| `lexical` / `hybrid` | Từ khóa (BM25) / Lai (BM25 + vector) |
+| `DRAFT_REQUIRES_HUMAN_REVIEW` / `DRAFT_REQUIRES_HUMAN_APPROVAL` | Cần nhân viên phê duyệt |
+| `agent_disabled` / `tool_calling_agent` / `agent_answer_rejected` | Agent chưa được bật / Agent đã gọi công cụ / Câu trả lời bị từ chối |
+| `template_preview` / `llm_draft_review_required` | Mẫu có sẵn / LLM soạn, cần duyệt |
+| intents (`damaged_product`, `return_policy`, ...) and priorities (`high`, `medium`, `low`) | Hàng hư hỏng / giao sai, Đổi trả / hoàn tiền, ... ; Cao / Trung bình / Thấp |
+
 ## Not built (on purpose)
 
 LangGraph/LangChain, vector databases, Shopify/Meta/Google Ads integrations, authentication, queues, deployment. They would add surface area without making the unverified LLM path any more proven.
