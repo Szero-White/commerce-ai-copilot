@@ -10,6 +10,7 @@ from pathlib import Path
 from app.config import ROOT, Settings
 from app.storage import Store
 from app.services import question_answer
+from app.ollama import ModelUnavailable, has_model, list_models
 
 CASES = (
     {"question":"What sizes are available for the custom print hoodie?", "expected_source":"POD-202"},
@@ -25,6 +26,15 @@ def main():
     if config.llm_provider != "ollama" or config.embedding_provider != "ollama":
         print("Set LLM_PROVIDER=ollama and EMBEDDING_PROVIDER=ollama first; did not claim live AI test.")
         return 2
+    try:
+        installed=list_models(config)
+    except ModelUnavailable as exc:
+        print(f"Ollama is not reachable ({exc}); did not claim live AI test.")
+        return 2
+    missing=[m for m in (config.ollama_model,config.embedding_model) if not has_model(installed,m)]
+    if missing:
+        print(f"Models not installed locally: {missing}; installed: {installed}. Did not claim live AI test.")
+        return 2
     store=Store(config.data_path)
     docs=store.documents()
     indexed=sum(bool(d['embedding_json']) and d.get('embedding_model')==config.embedding_model for d in docs)
@@ -39,11 +49,12 @@ def main():
         observed_pass=(result['mode']=='llm_rag_cited' and expected in cited) if expected else result['mode']=='no_evidence'
         rows.append({"question":case['question'],"expected_source":expected,"mode":result['mode'],
                      "retrieval_mode":result['retrieval_mode'],"retrieved_ids":cited,"retrieved_evidence":[{"id":src["id"],"title":src["title"],"excerpt":src["content"][:500]} for src in result["sources"]],
+                     "context_window":result.get('context_window'),
                      "latency_ms":result['latency_ms'],"tokens_in":result['tokens_in'],
                      "tokens_out":result['tokens_out'],"answer":result['answer'],"contract_pass":observed_pass,
                      "human_factuality_review":"NOT_COMPLETED"})
     report={"observed_at_utc":datetime.now(timezone.utc).isoformat(),"llm_model":config.ollama_model,
-            "embedding_model":config.embedding_model,"document_count":len(docs),"model_calls_are_local":True,
+            "embedding_model":config.embedding_model,"num_ctx":config.num_ctx,"document_count":len(docs),"model_calls_are_local":True,
             "contract_passed":sum(x['contract_pass'] for x in rows),"contract_total":len(rows),
             "disclaimer":"Checks mode/source IDs only; NOT verified factual accuracy, hallucination rate or production SLA.",
             "cases":rows}
