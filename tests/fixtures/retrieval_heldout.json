@@ -1,0 +1,37 @@
+{
+  "_note": "Written BEFORE changing the retrieval logic for the two known leaks; not used for tuning until the first measurement was recorded (see docs/EVALUATION_REPORT.md).",
+  "positive": [
+    {"question": "Bàn làm việc Oak có màu gì?", "expected": ["PRD-101"]},
+    {"question": "Ghế Flex có nâng hạ được không?", "expected": ["PRD-102"]},
+    {"question": "Đèn Focus LED có mấy mức sáng và nguồn gì?", "expected": ["PRD-103"]},
+    {"question": "Tủ hồ sơ Slim kích thước thế nào?", "expected": ["PRD-104"]},
+    {"question": "Thanh toán COD được áp dụng ở đâu?", "expected": ["POL-004"]},
+    {"question": "Thời gian giao hàng đến tỉnh khác?", "expected": ["POL-001"]},
+    {"question": "Hàng giao sai mẫu có đổi được không?", "expected": ["POL-002"]},
+    {"question": "Bảo hành ghế văn phòng bao nhiêu tháng?", "expected": ["POL-003", "PRD-102"]},
+    {"question": "Chatbot có được cho biết số điện thoại khách không?", "expected": ["POL-005"]},
+    {"question": "Lịch hẹn lắp đặt tủ như thế nào?", "expected": ["POL-006", "PRD-104"]},
+    {"question": "Quy trình chăm sóc khách hàng nói gì khi không có dữ liệu?", "expected": ["OPS-001"]},
+    {"question": "Nguyên tắc nội dung quảng cáo có cho phép nói tốt nhất không?", "expected": ["MKT-001"]},
+    {"question": "Is the personalized mug made of ceramic?", "expected": ["POD-201"]},
+    {"question": "What colors does the ceramic mug come in?", "expected": ["POD-201"]},
+    {"question": "Can I get a custom hoodie in size XL?", "expected": ["POD-202"]},
+    {"question": "What if my personalized item arrives damaged?", "expected": ["POD-POL-201"]},
+    {"question": "Ghế Flex có màu đỏ không?", "expected": ["PRD-102"]},
+    {"question": "Đèn bàn dùng nguồn USB-C phải không?", "expected": ["PRD-103"]}
+  ],
+  "negative": [
+    "Cửa hàng có chi nhánh ở Hà Nội không?",
+    "Làm sao để đăng ký làm đại lý?",
+    "Có bán nệm không?",
+    "Tôi muốn gặp quản lý cửa hàng",
+    "Sản phẩm có chứng nhận FSC không?",
+    "Thời gian bảo hành của máy lạnh là bao lâu?",
+    "Có thể trả góp 0% không?",
+    "Điểm tích lũy được tính thế nào?",
+    "Do you ship to the United States?",
+    "What is your Wi-Fi password?",
+    "Is the oak desk waterproof?",
+    "Tôi quên mật khẩu tài khoản"
+  ]
+}

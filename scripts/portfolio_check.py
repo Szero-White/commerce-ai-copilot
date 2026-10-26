@@ -17,8 +17,7 @@ from app.main import create_app
 def main():
     start = time.perf_counter()
     cases = []
-    # Windows keeps SQLite files locked until GC; cleanup errors must not abort the report.
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+    with tempfile.TemporaryDirectory() as directory:
         config = replace(Settings(), data_path=Path(directory)/'acceptance.db',
                          llm_provider='off', embedding_provider='off')
         with TestClient(create_app(settings=config)) as api:

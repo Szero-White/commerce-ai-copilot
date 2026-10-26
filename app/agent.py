@@ -27,8 +27,10 @@ def execute_tool(store, settings, name, args):
                 "content":doc['content'][:900] if doc and doc['category']=='product' else None}
     if name == 'search_policy':
         query=str(args.get('query',''))[:300]
-        docs,_=search(store,settings,query,k=2)
-        return {"documents":[{"source":d['id'],"content":d['content'][:650]} for d in docs if d['category']=='policy']}
+        # Rank first, then keep policies: a product hit must not push a relevant policy out of the top-k.
+        docs,_=search(store,settings,query,k=6)
+        policies=[d for d in docs if d['category']=='policy'][:2]
+        return {"documents":[{"source":d['id'],"content":d['content'][:650]} for d in policies]}
     return {"error":"not_allowed"}
 
 

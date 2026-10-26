@@ -43,8 +43,27 @@ def _supported_citations(answer, sources):
     return bool(cited) and cited <= allowed
 
 
+def _excerpt(text, limit=480):
+    """Whole sentences up to `limit` characters, so exclusions at the end are not silently cut."""
+    if len(text) <= limit:
+        return text
+    cut = max(text.rfind(mark, 0, limit) for mark in (". ", "! ", "? ", "; "))
+    return (text[:cut + 1] if cut > limit // 3 else text[:limit].rsplit(" ", 1)[0] + "…")
+
+
+# Sentences that are bookkeeping or instructions to the assistant, not advertising copy.
+_NOT_AD_COPY = re.compile(r"giá niêm yết|\bprice\b|\bsku\b|synthetic|^\s*(do not|must not)\b|"
+                          r"\bnot a real\b|\bis implied\b", re.I)
+
+
+def _ad_body(content):
+    sentences = re.split(r"(?<=[.!?])\s+", content.strip())
+    kept = [s for s in sentences if s and not _NOT_AD_COPY.search(s)]
+    return " ".join(kept) if kept else content.split(".")[0].strip() + "."
+
+
 def _extractive_answer(sources, prefix):
-    return prefix + "\n" + "\n".join(f"[{s['id']}] {s['content'][:215]}" for s in sources)
+    return prefix + "\n" + "\n".join(f"[{s['id']}] {_excerpt(s['content'])}" for s in sources)
 
 
 def question_answer(store, settings, question):
@@ -115,7 +134,7 @@ def campaign_draft(store, settings, sku, audience):
     tin=tout=0
     model_called=False
     result={"headline":f"Khám phá {doc['title'].split(' - mã ')[0]}",
-            "body":f"{doc['content'].split('Giá niêm yết')[0].strip()} Tìm hiểu thêm để xem sản phẩm có phù hợp nhu cầu của {audience or 'bạn'} không.",
+            "body":f"{_ad_body(doc['content'])} Tìm hiểu thêm để xem sản phẩm có phù hợp nhu cầu của {audience or 'bạn'} không.",
             "cta":"Xem thông tin sản phẩm", "disclaimer":"Bản nháp cần người kiểm duyệt trước khi đăng. Dữ liệu sản phẩm chỉ là giả lập."}
     if settings.llm_provider=="ollama":
         try:
