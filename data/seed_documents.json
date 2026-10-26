@@ -1,0 +1,92 @@
+[
+  {
+    "id": "POL-001",
+    "title": "Chính sách giao hàng (dữ liệu giả lập)",
+    "category": "policy",
+    "content": "Nội thất Demo Lab giao hàng tại TP.HCM trong khoảng 2 đến 4 ngày làm việc sau khi xác nhận đơn. Đối với tỉnh thành khác, thời gian dự kiến từ 4 đến 8 ngày làm việc. Phí vận chuyển được xác nhận trước khi đặt hàng; chưa cung cấp biểu phí cố định. Các mốc trên chỉ là dữ liệu mô phỏng, không phải cam kết của doanh nghiệp thật."
+  },
+  {
+    "id": "POL-002",
+    "title": "Chính sách đổi trả (dữ liệu giả lập)",
+    "category": "policy",
+    "content": "Khách hàng có thể gửi yêu cầu đổi trả trong 7 ngày kể từ ngày nhận hàng đối với sản phẩm bị lỗi sản xuất hoặc giao sai mẫu. Cần cung cấp mã đơn và hình ảnh sản phẩm; bộ phận chăm sóc khách hàng sẽ kiểm tra trước khi chấp thuận. Hàng hư hại do sử dụng sai hướng dẫn không nằm trong diện đổi trả miễn phí. Đây là chính sách giả lập cho demo."
+  },
+  {
+    "id": "POL-003",
+    "title": "Bảo hành (dữ liệu giả lập)",
+    "category": "policy",
+    "content": "Các mẫu bàn làm việc Demo Lab được giả lập bảo hành kết cấu 12 tháng; ghế văn phòng bảo hành 12 tháng theo các điều kiện ghi trên phiếu; đèn bàn bảo hành 6 tháng. Hỗ trợ bảo hành yêu cầu mã đơn hoặc chứng từ mua hàng. Chính sách có tính minh họa, không đại diện doanh nghiệp thực."
+  },
+  {
+    "id": "POL-004",
+    "title": "Thanh toán (dữ liệu giả lập)",
+    "category": "policy",
+    "content": "Demo Lab hỗ trợ chuyển khoản ngân hàng và thanh toán khi nhận hàng (COD) theo khu vực được xác nhận. Không lưu số thẻ hoặc thông tin thanh toán nhạy cảm trong ứng dụng demo. Việc thanh toán và hoàn tiền thật chưa được tích hợp; nhân viên kiểm tra giao dịch thủ công."
+  },
+  {
+    "id": "POL-005",
+    "title": "Hỗ trợ đơn hàng (dữ liệu giả lập)",
+    "category": "policy",
+    "content": "Khách muốn kiểm tra trạng thái đơn cần cung cấp mã đơn và xác minh qua kênh chăm sóc khách hàng được ủy quyền. Chatbot công khai không được tiết lộ tên, địa chỉ, số điện thoại, tình trạng đơn hay thông tin cá nhân chỉ dựa trên mã đơn. Hệ thống demo không kết nối đơn hàng thật."
+  },
+  {
+    "id": "POL-006",
+    "title": "Lắp đặt (dữ liệu giả lập)",
+    "category": "policy",
+    "content": "Một số mẫu bàn và tủ cần lắp đặt. Dịch vụ lắp đặt tại TP.HCM chỉ áp dụng khi đơn hàng đã được xác nhận, lịch hẹn cần chốt với nhân viên. Báo giá lắp đặt phụ thuộc sản phẩm và địa chỉ; chatbot không được tự bịa chi phí."
+  },
+  {
+    "id": "PRD-101",
+    "title": "Bàn làm việc Oak 120 - mã DEMO-DESK120",
+    "category": "product",
+    "content": "Sản phẩm demo DEMO-DESK120: Bàn làm việc Oak 120, mặt bàn 120 x 60 cm, chiều cao 75 cm, màu gỗ sồi sáng, chân thép sơn tĩnh điện. Giá niêm yết giả lập 1.890.000 VND. Phù hợp không gian làm việc nhỏ; yêu cầu lắp ráp khi nhận. Không có thông tin tải trọng được kiểm định."
+  },
+  {
+    "id": "PRD-102",
+    "title": "Ghế văn phòng Flex - mã DEMO-CHAIR",
+    "category": "product",
+    "content": "Sản phẩm demo DEMO-CHAIR: Ghế văn phòng Flex, lưng lưới, tựa tay cố định, có nâng hạ chiều cao, màu đen. Giá niêm yết giả lập 1.450.000 VND. Bảo hành 12 tháng theo chính sách Demo Lab. Không cam kết công thái học y tế hay tải trọng nếu chưa kiểm chứng."
+  },
+  {
+    "id": "PRD-103",
+    "title": "Đèn bàn Focus LED - mã DEMO-LAMP",
+    "category": "product",
+    "content": "Sản phẩm demo DEMO-LAMP: Đèn bàn Focus LED, ba mức sáng, nguồn USB-C 5V, màu trắng, giá niêm yết giả lập 390.000 VND. Thời gian bảo hành giả lập 6 tháng. Chưa có chứng nhận kiểm nghiệm ánh sáng hoặc tiết kiệm điện được cung cấp."
+  },
+  {
+    "id": "PRD-104",
+    "title": "Tủ hồ sơ Slim - mã DEMO-CABINET",
+    "category": "product",
+    "content": "Sản phẩm demo DEMO-CABINET: Tủ hồ sơ Slim, kích thước 80 x 40 x 160 cm, gồm bốn tầng, cửa đóng mở, màu xám nhạt, giá niêm yết giả lập 2.350.000 VND. Cần xác nhận phí vận chuyển và lắp đặt với nhân viên."
+  },
+  {
+    "id": "OPS-001",
+    "title": "Quy trình chăm sóc khách hàng e-commerce",
+    "category": "operations",
+    "content": "Khi khách hỏi về chính sách hoặc thông số sản phẩm, chatbot phải tìm tài liệu liên quan và dẫn nguồn. Nếu không tìm thấy dữ liệu, trả lời không đủ thông tin và chuyển cho người phụ trách. Không bịa giá, tồn kho hay thời gian giao. Mọi hành động gửi tin hàng loạt cần người phụ trách phê duyệt."
+  },
+  {
+    "id": "MKT-001",
+    "title": "Nguyên tắc nội dung quảng cáo",
+    "category": "marketing",
+    "content": "Thông điệp quảng cáo cần mô tả đúng thông số sản phẩm có trong catalogue, tránh khẳng định tuyệt đối như tốt nhất, chữa bệnh, cam kết sức khỏe hoặc giảm giá không có phê duyệt. Mọi bản nháp phải được nhân viên marketing kiểm tra trước khi phát hành. Không có tích hợp gửi quảng cáo tự động trong demo."
+  },
+  {
+    "id": "POD-201",
+    "title": "Personalized Ceramic Mug 11oz — demo listing",
+    "category": "product",
+    "content": "Synthetic print-on-demand product. SKU POD-MUG11. Personalized ceramic mug 11oz; customer supplies a name or short message before checkout. Material: ceramic. Colors: white. Price: example USD 18.00, not a real retail price. Do not claim stock availability or production ETA."
+  },
+  {
+    "id": "POD-202",
+    "title": "Custom Print Hoodie — demo listing",
+    "category": "product",
+    "content": "Synthetic print-on-demand product. SKU POD-HOODIE. Custom print hoodie made to order. Sizes S, M, L, XL. Price: example USD 39.00, not a real retail price. Customer artwork must be reviewed for suitability. No inventory, shipping promise or production speed is implied."
+  },
+  {
+    "id": "POD-POL-201",
+    "title": "Personalized item return policy — synthetic example",
+    "category": "policy",
+    "content": "Synthetic demo policy: Personalized items are not eligible for return due to a customer change of mind after production begins. If a personalized item arrives damaged or incorrect due to production, the buyer should contact customer support within 7 days with photos and order reference for manual review. This is not NEXGEN BROS policy and must not be used to advise real customers."
+  }
+]

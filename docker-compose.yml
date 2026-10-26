@@ -1,0 +1,10 @@
+services:
+  commerce-lab:
+    build: .
+    # Bind only to the local machine, not public Internet.
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - labdata:/code/runtime
+volumes:
+  labdata:

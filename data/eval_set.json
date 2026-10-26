@@ -1,0 +1,54 @@
+[
+  {
+    "question": "Giao hàng ở thành phố Hồ Chí Minh mất bao lâu?",
+    "expected_source": "POL-001"
+  },
+  {
+    "question": "Sản phẩm lỗi có được đổi trong 7 ngày không?",
+    "expected_source": "POL-002"
+  },
+  {
+    "question": "Ghế lưng lưới Flex giá bao nhiêu?",
+    "expected_source": "PRD-102"
+  },
+  {
+    "question": "Đèn LED Focus dùng cổng nguồn nào?",
+    "expected_source": "PRD-103"
+  },
+  {
+    "question": "Bàn Oak 120 kích thước bao nhiêu?",
+    "expected_source": "PRD-101"
+  },
+  {
+    "question": "Tủ hồ sơ Slim có bao nhiêu tầng?",
+    "expected_source": "PRD-104"
+  },
+  {
+    "question": "Sản phẩm bàn làm việc bảo hành bao lâu?",
+    "expected_source": "POL-003"
+  },
+  {
+    "question": "Khách muốn kiểm tra trạng thái đơn hàng cần làm gì?",
+    "expected_source": "POL-005"
+  },
+  {
+    "question": "Có được thanh toán khi nhận hàng không?",
+    "expected_source": "POL-004"
+  },
+  {
+    "question": "Có thể tự động phát hành quảng cáo chưa duyệt không?",
+    "expected_source": "MKT-001"
+  },
+  {
+    "question": "Can I return a personalized item because I changed my mind?",
+    "expected_source": "POD-POL-201"
+  },
+  {
+    "question": "What sizes are available for the custom print hoodie?",
+    "expected_source": "POD-202"
+  },
+  {
+    "question": "How much is the personalized ceramic mug 11oz?",
+    "expected_source": "POD-201"
+  }
+]
