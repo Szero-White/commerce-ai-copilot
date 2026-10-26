@@ -362,7 +362,7 @@ def _contents(messages: list[dict]):
     return system, contents
 
 
-def chat_with_tools(settings, messages, tools):
+def chat_with_tools(settings, messages, tools, allow_tools=True):
     """One tool-calling turn; returns an Ollama-shaped result so agent.py handles both providers."""
     model = settings.gemini_model
     _check_model(model)
@@ -372,6 +372,8 @@ def chat_with_tools(settings, messages, tools):
                "generationConfig": _generation_config(settings, model, False)}
     if system:
         payload["systemInstruction"] = system
+    if not allow_tools:
+        payload["toolConfig"] = {"functionCallingConfig": {"mode": "NONE"}}  # final turn: text only
     data = _generate(settings, model, payload)
     parts, tokens_in, tokens_out = _parse(data)
     text = "".join(p.get("text", "") for p in parts if isinstance(p, dict) and isinstance(p.get("text"), str))

@@ -598,3 +598,33 @@ def test_empty_candidate_reports_the_finish_reason(tmp_path, monkeypatch):
     with fake_gemini(lambda *a: reply, monkeypatch):
         with pytest.raises(ModelUnavailable, match='MAX_TOKENS'):
             gemini.chat(cfg(tmp_path, gemini_model='gemini-3.5-flash-lite'), 's', 'u')
+
+
+def test_agent_last_turn_is_text_only(tmp_path, monkeypatch):
+    call = {'functionCall': {'name': 'lookup_product', 'args': {'sku': 'PRD-101'}}}
+    search = {'functionCall': {'name': 'search_policy', 'args': {'query': 'giao hàng'}}}
+    replies = iter([(200, {'candidates': [{'content': {'parts': [call]}}]}),
+                    (200, {'candidates': [{'content': {'parts': [search]}}]}),
+                    text_reply('Sản phẩm PRD-101 rộng 120 x 60 cm [PRD-101].')])
+    with fake_gemini(lambda *a: next(replies), monkeypatch) as seen:
+        result = TestClient(create_app(settings=cfg(tmp_path))).post('/api/agent', json={'task': 'Tra cứu PRD-101'}).json()
+    assert [('toolConfig' in r['body']) for r in seen] == [False, False, True]
+    assert seen[2]['body']['toolConfig'] == {'functionCallingConfig': {'mode': 'NONE'}}
+    assert result['mode'] == 'tool_calling_agent' and [s['tool'] for s in result['steps']] == ['lookup_product', 'search_policy']
+
+
+def test_ollama_agent_last_turn_sends_no_tools(tmp_path, monkeypatch):
+    from app import agent
+    payloads = []
+    replies = iter([
+        {'message': {'tool_calls': [{'function': {'name': 'lookup_product', 'arguments': {'sku': 'PRD-101'}}}]}},
+        {'message': {'tool_calls': [{'function': {'name': 'search_policy', 'arguments': {'query': 'giao hang'}}}]}},
+        {'message': {'content': 'Bàn Oak 120 x 60 cm [PRD-101]'}}])
+
+    def fake(url, path, payload, timeout):
+        payloads.append(payload)
+        return next(replies)
+    monkeypatch.setattr(agent, 'request_json', fake)
+    config = replace(Settings(), data_path=tmp_path / 'o.db', llm_provider='ollama', embedding_provider='off')
+    TestClient(create_app(settings=config)).post('/api/agent', json={'task': 'Tra cứu PRD-101'})
+    assert ['tools' in p for p in payloads] == [True, True, False]

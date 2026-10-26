@@ -221,11 +221,11 @@ def main(argv=None) -> int:
         report["agent"] = []
         for task in AGENT_TASKS[:1] if smoke else AGENT_TASKS:
             model_ms[0] = 0.0
-            run = agent.run_agent(store, settings, task)
+            run = agent.run_agent(store, settings, task, diagnostics=True)  # local report only
             report["agent"].append({"task": task, "mode": run["mode"], "answer": run["answer"],
                                     "tools": [s["tool"] for s in run["steps"]], "tokens_in": run["tokens_in"],
                                     "tokens_out": run["tokens_out"], "latency_ms": run["latency_ms"],
-                                    "model_latency_ms": round(model_ms[0]), "rejection": run["rejection"],
+                                    "model_latency_ms": round(model_ms[0]), "rejection": run.get("rejection"),
                                     "context_window": run["context_window"], "llm": run["llm"]})
             if gemini.stopped_reason():
                 break

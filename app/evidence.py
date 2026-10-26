@@ -117,6 +117,11 @@ def answer_problems(answer: str, sources: list[dict]) -> list[str]:
     if not ids <= set(by_id):
         return [f"cites sources that were not read: {sorted(ids - set(by_id))}"]
     body = _CITE.sub("", answer)
+    # "Sản phẩm PRD-101 ..." in prose names a document the system supplied; its digits are an
+    # identifier, not a quantity. Only IDs of the sources actually provided are exempt, so an
+    # invented "PRD-999" or any real quantity ("giảm 90%") is still checked.
+    for known in by_id:
+        body = re.sub(rf"(?<![A-Za-z0-9-]){re.escape(known)}(?![A-Za-z0-9-])", " ", body)
     cited = [by_id[doc_id] for doc_id in ids]
     extra = numbers(body) - numbers(evidence_text(cited))
     if extra:

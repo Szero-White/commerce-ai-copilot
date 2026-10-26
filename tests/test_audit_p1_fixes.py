@@ -176,16 +176,24 @@ def test_answer_problems_names_the_failed_rule():
     assert answer_problems('Bàn rộng 120 cm [PRD-101]', DESK) == []
 
 
-def test_agent_rejection_carries_reasons_for_the_reviewer(tmp_path, monkeypatch):
+def test_agent_rejection_diagnostics_are_local_only(tmp_path, monkeypatch):
     from app import agent
-    replies = iter([
-        {'message': {'tool_calls': [{'function': {'name': 'lookup_product', 'arguments': {'sku': 'PRD-101'}}}]}},
-        {'message': {'content': 'Bàn Oak rộng 130 cm [PRD-101]'}}])
-    monkeypatch.setattr(agent, 'request_json', lambda *a, **k: next(replies))
+    from app.storage import Store
+
+    def replies():
+        return iter([
+            {'message': {'tool_calls': [{'function': {'name': 'lookup_product', 'arguments': {'sku': 'PRD-101'}}}]}},
+            {'message': {'content': 'Bàn Oak rộng 130 cm [PRD-101]'}}])
+    stream = replies()
+    monkeypatch.setattr(agent, 'request_json', lambda *a, **k: next(stream))
     result = client(tmp_path).post('/api/agent', json={'task': 'Tra cứu sản phẩm PRD-101'}).json()
     assert result['mode'] == 'agent_answer_rejected'
-    assert "['130']" in result['rejection']['reasons'][0] and '130 cm' in result['rejection']['unverified_draft']
-    assert '130' not in result['answer']          # the draft is never presented as the answer
+    assert 'rejection' not in result and '130' not in json.dumps(result)      # nothing diagnostic over HTTP
+    stream = replies()
+    config = replace(Settings(), data_path=tmp_path / 'local.db', llm_provider='ollama', embedding_provider='off')
+    local = agent.run_agent(Store(config.data_path), config, 'Tra cứu sản phẩm PRD-101', diagnostics=True)
+    assert "['130']" in local['rejection']['reasons'][0] and '130 cm' in local['rejection']['unverified_draft']
+    assert '130' not in local['answer']                                         # never presented as the answer
 
 
 def test_agent_accepts_grouped_citations(tmp_path, monkeypatch):
@@ -195,4 +203,17 @@ def test_agent_accepts_grouped_citations(tmp_path, monkeypatch):
         {'message': {'content': 'Bàn Oak mặt 120 x 60 cm [PRD-101, PRD-101]'}}])
     monkeypatch.setattr(agent, 'request_json', lambda *a, **k: next(replies))
     result = client(tmp_path).post('/api/agent', json={'task': 'Tra cứu sản phẩm PRD-101'}).json()
-    assert result['mode'] == 'tool_calling_agent' and result['rejection'] is None
+    assert result['mode'] == 'tool_calling_agent' and 'rejection' not in result
+
+
+def test_document_ids_named_in_prose_are_not_numeric_claims():
+    # Replayed from real tool output: "Sản phẩm PRD-101 ..." used to fail on the digits "101".
+    from app.evidence import answer_problems
+    sources = DESK + [{'id': 'POL-001', 'title': '', 'content': 'Giao hàng tại TP.HCM trong 2 đến 4 ngày làm việc.'}]
+    assert answer_problems('Sản phẩm PRD-101 rộng 120 cm [PRD-101]. Giao hàng 2 đến 4 ngày [POL-001].', sources) == []
+    assert answer_problems('- **Sản phẩm PRD-101**: 120 x 60 cm [PRD-101]\n- **Giao hàng**: 2 đến 4 ngày [POL-001]', sources) == []
+    # Still caught: an ID that was never provided, and real quantities next to a real ID.
+    assert "['999']" in answer_problems('Sản phẩm PRD-999 rộng 120 cm [PRD-101]', sources)[0]
+    assert "['90']" in answer_problems('PRD-101 đang giảm 90% [PRD-101]', sources)[0]
+    assert "['130']" in answer_problems('PRD-101 rộng 130 cm [PRD-101]', sources)[0]
+    assert answer_problems('Mã PRD-1011 rộng 120 cm [PRD-101]', sources)       # a longer id is not the provided one

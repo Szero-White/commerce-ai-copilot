@@ -103,9 +103,9 @@ if ($SelfTest) {
 
 Write-Host ''
 if ($exitCode -eq 0) {
-    Write-Host 'Run finished. Report: reports\live_eval_gemini.json (contains no key). Tell Claude Code it is ready.' -ForegroundColor Green
+    Write-Host 'Run finished. Smoke report: reports\live_eval_gemini_smoke.json (contains no key). Tell Claude Code it is ready.' -ForegroundColor Green
 } else {
     Write-Host "Run ended with exit code $exitCode (stopped early, quota/model/billing error, or cancelled)." -ForegroundColor Yellow
-    Write-Host 'A partial report may exist in reports\live_eval_gemini.json. Nothing was retried on another model or tier.'
+    Write-Host 'A partial report may exist in reports\live_eval_gemini_smoke.json. Nothing was retried on another model or tier.'
 }
 exit $exitCode

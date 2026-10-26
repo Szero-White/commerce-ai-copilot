@@ -37,7 +37,9 @@ def execute_tool(store, settings, name, args):
     return {"error":"not_allowed"}
 
 
-def run_agent(store,settings,task):
+def run_agent(store,settings,task,diagnostics=False):
+    """diagnostics=True adds `rejection` (rule + unverified draft) for LOCAL evaluation reports only;
+    the HTTP API never passes it, so an unverified draft is never exposed to a client."""
     started=time.perf_counter()
     trace=[]
     token_in=token_out=0
@@ -52,11 +54,12 @@ def run_agent(store,settings,task):
     max_prompt=0
     try:
         for step_index in range(3):
+            final_turn=step_index==2   # the prompt allows 2 tool calls; the 3rd turn must answer in text
             payload={"model":settings.ollama_model,"messages":messages,"stream":False,
-                     "tools":TOOLS,"options":{"num_predict":settings.max_output_tokens,"temperature":0.1,
+                     **({} if final_turn else {"tools":TOOLS}),"options":{"num_predict":settings.max_output_tokens,"temperature":0.1,
                                               "num_ctx":settings.num_ctx}}
             if settings.llm_provider=='gemini':
-                result=gemini.chat_with_tools(settings,messages,TOOLS)
+                result=gemini.chat_with_tools(settings,messages,TOOLS,allow_tools=not final_turn)
             else:
                 result=request_json(settings.ollama_url,"/api/chat",payload,settings.timeout_seconds)
             prompt_tokens=count(result.get('prompt_eval_count'))
@@ -123,7 +126,9 @@ def run_agent(store,settings,task):
         mode='tool_calling_agent'
     elapsed=round((time.perf_counter()-started)*1000)
     store.log('agent',mode,elapsed,token_in,token_out)
-    return {"mode":mode,"answer":answer,"steps":trace,"approval_required":True,
+    result={"mode":mode,"answer":answer,"steps":trace,"approval_required":True,
             "tokens_in":token_in,"tokens_out":token_out,"latency_ms":elapsed,
-            "context_window":context_window(settings,max_prompt),"llm":llm_info(settings),
-            "rejection":rejection}
+            "context_window":context_window(settings,max_prompt),"llm":llm_info(settings)}
+    if diagnostics:
+        result["rejection"]=rejection
+    return result
