@@ -23,4 +23,5 @@ class Settings:
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "bge-m3")
     timeout_seconds: int = max(3, min(_int_env("LLM_TIMEOUT_SECONDS", 45), 120))
     max_output_tokens: int = max(64, min(_int_env("MAX_OUTPUT_TOKENS", 256), 512))
+    num_ctx: int = max(1024, min(_int_env("OLLAMA_NUM_CTX", 4096), 32768))
     max_context_chars: int = max(500, min(_int_env("MAX_CONTEXT_CHARS", 2600), 6000))
