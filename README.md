@@ -8,7 +8,7 @@
 
 | Area | Status | Evidence |
 |---|---|---|
-| FastAPI service, SQLite FTS5 (BM25) retrieval, source citation, abstention | **Run for real (offline)** | 199 pytest tests, 8/8 offline acceptance, all endpoints exercised over HTTP against a live uvicorn |
+| FastAPI service, SQLite FTS5 (BM25) retrieval, source citation, abstention | **Run for real (offline)** | 206 pytest tests (199 original + 7 static UI-asset and CSS regressions), 8/8 offline acceptance, all endpoints exercised over HTTP against a live uvicorn |
 | Retrieval relevance gate (IDF coverage, matched words must be close together, domain synonyms, accent-aware match) | **Run for real (offline)** | 31 positive / 33 negative evaluation questions ([report](docs/EVALUATION_REPORT.md)) |
 | Evidence guards: numbers, promises, negated policies, audience injection | **Run for real (offline)** | Unit + API regression tests. Pattern matching only; see limits below |
 | Support-ticket triage (rules, human review required) | **Run for real (offline)** | Deterministic, **not** an AI agent |
@@ -23,14 +23,14 @@
 
 ## Quick start (no model, no API key required)
 
-Requires Git and **Python 3.10+** (developed and tested on Python 3.14 / Windows 11; the grammar was checked against 3.9–3.11, and CI uses 3.11 on Ubuntu, which the author has not run). A browser UI check was done with Chrome. Docker and the Linux/macOS commands below are provided but **untested by the author**.
+Requires Git and **Python 3.10+** (developed and tested on Python 3.14 / Windows 11; the grammar was checked against 3.9–3.11, and CI uses 3.11 on Ubuntu, which the author has not run). The UI was checked in real Chrome at 390 to 1920 px (see the evaluation report). Docker and the Linux/macOS commands below are provided but **untested by the author**.
 
 ```powershell
 git clone <your-repo-url> commerce-ai-copilot
 cd commerce-ai-copilot
 python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements-dev.txt
-.venv\Scripts\python -m pytest -q                       # 199 passed
+.venv\Scripts\python -m pytest -q                       # 206 passed
 .venv\Scripts\python -m scripts.portfolio_check         # 8/8 offline acceptance
 .venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
@@ -79,7 +79,7 @@ Details and design decisions: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Repository map
 
-`app/` service · `data/` synthetic catalogue, policies and evaluation sets · `tests/` 199 tests · `scripts/` ingest, index, offline acceptance, live verification · `docs/` architecture, evaluation, demo script, CV text, live-verification options, audit history · `web/` static UI.
+`app/` service · `data/` synthetic catalogue, policies and evaluation sets · `tests/` unit, contract, and static-asset regressions · `scripts/` ingest, index, offline acceptance, live verification · `docs/` architecture, evaluation, demo script, CV text, audit history and [code quality guide](docs/CODE_QUALITY.md) · `web/` static UI (`app.js`, `index.html`, and the ordered CSS modules in `web/styles/`).
 
 ## Job-description mapping (honest)
 

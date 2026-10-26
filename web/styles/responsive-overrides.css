@@ -1,0 +1,6 @@
+/* responsive-overrides.css: small-phone refinements only; import order controls the cascade. */
+@media (max-width:480px) {
+  .routing-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,244 @@
+/* assistant.css: presentation only; import order controls the cascade. */
+.chat-layout {
+  display: grid;
+  grid-template-columns: minmax(0,1.65fr) minmax(260px,1fr);
+  gap: 18px;
+}
+.panel {
+  background: #fff;
+  border: 1px solid #e8ebf2;
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.panel-header {
+  padding: 19px 22px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.panel-header > div {
+  min-width: 0;
+}
+.panel-header strong {
+  font-size: var(--font-md);
+  display: block;
+  line-height: 1.4;
+  font-weight: 700;
+}
+.panel-header small {
+  display: block;
+  color: #73829a;
+  font-size: var(--font-xs);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+.chip {
+  display: inline-flex;
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: #e9f8f3;
+  color: #148f77;
+  font-weight: 700;
+  font-size: var(--font-xs);
+  white-space: nowrap;
+  flex: none;
+  line-height: 1.35;
+  text-align: center;
+}
+.chip.neutral {
+  background: #f2f4f8;
+  color: #71829b;
+}
+.chip.orange {
+  background: #fff1e2;
+  color: #bc762e;
+}
+.chat-panel {
+  min-height: 625px;
+  display: flex;
+  flex-direction: column;
+}
+.messages {
+  padding: 22px 22px 14px;
+  flex: 1;
+  min-height: 355px;
+  max-height: 480px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  max-width: 96%;
+}
+.msg.user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+.avatar {
+  background: #ebf9f4;
+  color: #139d8b;
+  font-size: var(--font-lg);
+  font-weight: 800;
+  border-radius: 10px;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.user .avatar {
+  background: #e9efff;
+  color: #5977c5;
+}
+.bubble {
+  max-width: 100%;
+  background: #f5f7fa;
+  border: 1px solid #eef0f5;
+  padding: 14px 16px;
+  border-radius: 6px 13px 13px 13px;
+  line-height: 1.68;
+  font-size: var(--font-base);
+  color: #324057;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.user .bubble {
+  background: #eaf6f3;
+  border-color: #def3ed;
+  border-radius: 13px 6px 13px 13px;
+}
+.prompts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 18px 12px;
+}
+.prompts span {
+  font-size: var(--font-xs);
+  color: #9ba6b8;
+  margin-right: 3px;
+}
+.prompt {
+  border: 1px solid #dce5ee;
+  border-radius: 50px;
+  background: white;
+  padding: 8px 12px;
+  color: #536681;
+  font-size: var(--font-xs);
+  line-height: 1.4;
+}
+.prompt:hover {
+  background: #f5fbfa;
+  border-color: #6ed9be;
+}
+.chat-form {
+  display: flex;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding: 17px 20px;
+}
+.chat-form input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #e4eaf1;
+  border-radius: 9px;
+  outline: none;
+  padding: 13px;
+  font-size: var(--font-base);
+}
+.chat-form input:focus,textarea:focus,select:focus {
+  border-color: #19bba0;
+  outline: 2px solid #19bba01a;
+}
+.send {
+  width: 42px;
+  border: none;
+  background: #22cfae;
+  border-radius: 9px;
+  font-size: 20px;
+  color: #0a3430;
+}
+.right-stack {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 18px;
+}
+.sources-panel {
+  min-height: 310px;
+}
+.sources-empty {
+  color: #73829a;
+  padding: 40px 24px;
+  font-size: var(--font-sm);
+  text-align: center;
+  line-height: 1.8;
+}
+.source {
+  padding: 16px 19px;
+  border-bottom: 1px solid var(--line);
+}
+.source:last-child {
+  border: 0;
+}
+.source-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.source-top strong {
+  font-size: var(--font-xs);
+  color: #139f84;
+}
+.source-top span {
+  font-size: var(--font-2xs);
+  color: #71809a;
+}
+.source h4 {
+  margin: 0 0 6px;
+  font-size: var(--font-sm);
+  line-height: 1.5;
+}
+.source p {
+  margin: 0;
+  color: #677790;
+  font-size: var(--font-xs);
+  line-height: 1.65;
+}
+.diagnostic {
+  padding-bottom: 9px;
+}
+.diagnostic .panel-header {
+  border: 0;
+  padding-bottom: 12px;
+}
+.diag-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 21px;
+  font-size: var(--font-xs);
+  color: #73829a;
+}
+.diag-row strong {
+  color: #35445c;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+.diag-caption {
+  border-top: 1px solid var(--line);
+  padding: 13px 21px 3px;
+  color: #728098;
+  font-size: var(--font-xs);
+  line-height: 1.65;
+}

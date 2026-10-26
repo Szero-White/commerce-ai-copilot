@@ -1,0 +1,77 @@
+/* agent-support.css: presentation only; import order controls the cascade. */
+.agent-result {
+  padding: 22px;
+  min-height: 365px;
+}
+.agent-answer-title {
+  font-size: var(--font-xs);
+  letter-spacing: .5px;
+  color: #69829e;
+  text-transform: uppercase;
+  margin: 0 0 10px;
+}
+.agent-answer {
+  font-size: var(--font-base);
+  line-height: 1.7;
+  color: #3f536f;
+  white-space: pre-wrap;
+}
+.trace-title {
+  font-size: var(--font-base);
+  margin: 25px 0 13px;
+}
+.trace-item {
+  background: #f5f8fb;
+  padding: 12px;
+  border: 1px solid #e8eef4;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+.trace-item strong {
+  font-size: var(--font-xs);
+  color: #168f82;
+}
+.trace-item pre {
+  overflow: auto;
+  max-height: 170px;
+  font-size: var(--font-2xs);
+  color: #738198;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.support-output {
+  padding: 24px;
+  min-height: 345px;
+}
+.routing-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+.routing-field {
+  background: #f4f8fb;
+  border: 1px solid #e5edf2;
+  padding: 13px;
+  border-radius: 9px;
+  min-width: 0;
+}
+.routing-field small {
+  display: block;
+  color: #8693a7;
+  font-size: var(--font-xs);
+  margin-bottom: 7px;
+}
+.routing-field strong {
+  color: #203951;
+  overflow-wrap: anywhere;
+  font-size: var(--font-sm);
+  line-height: 1.5;
+}
+.support-output .trace-item p {
+  margin: 8px 0 0;
+}
+.support-output .draft-note {
+  margin-top: 20px;
+}

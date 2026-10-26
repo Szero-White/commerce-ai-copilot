@@ -1,0 +1,160 @@
+/* responsive.css: presentation only; import order controls the cascade. */
+@media (max-width:1050px) {
+  .stats {
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+  .hero-mark {
+    opacity: .45;
+  }
+  .chat-layout {
+    grid-template-columns: 1fr;
+  }
+  .right-stack {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto;
+  }
+  .two-col {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    width: clamp(222px, 24vw, 246px);
+  }
+  .hero {
+    padding: 33px;
+  }
+}
+/* Tablet and below: the sidebar becomes a compact header so the content keeps the full width. */
+@media (max-width:900px) {
+  .shell {
+    display: block;
+  }
+  .sidebar {
+    position: relative;
+    height: auto;
+    width: 100%;
+    padding: 14px 16px 16px;
+  }
+  .brand {
+    padding: 0 4px 12px;
+  }
+  .sidebar nav {
+    grid-template-columns: repeat(3,minmax(0,1fr));
+    gap: 8px;
+  }
+  .nav {
+    min-height: 46px;
+    padding: 10px 12px;
+  }
+  .nav-caption,.side-bottom {
+    display: none;
+  }
+  .content {
+    padding: 24px clamp(16px,4vw,32px) 50px;
+  }
+}
+@media (max-width:700px) {
+  /* Phone navigation: three columns, icon above the label, two rows of equal height. */
+  .nav {
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+    min-height: 60px;
+    padding: 8px 6px;
+    font-size: var(--font-xs);
+    font-weight: 700;
+    text-align: center;
+    line-height: 1.3;
+  }
+  .topbar {
+    height: auto;
+    min-height: 57px;
+    padding: 8px 16px;
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .breadcrumbs {
+    min-width: 0;
+  }
+  .top-actions {
+    margin-left: auto;
+  }
+  .live-dot {
+    flex: none;
+  }
+  .top-pill {
+    display: none;
+  }
+  .hero-mark .marker {
+    display: none;
+  }
+  .hero {
+    padding: 29px 24px;
+    min-height: 0;
+  }
+  .hero-mark {
+    right: -10%;
+    width: 65%;
+    opacity: .25;
+  }
+  .stats {
+    grid-template-columns: repeat(2,1fr);
+    gap: 10px;
+  }
+  .stat {
+    padding: 17px;
+  }
+  .stat strong {
+    font-size: var(--font-2xl);
+  }
+  .section-head {
+    align-items: start;
+  }
+  .section-head .muted {
+    display: none;
+  }
+  .right-stack,.quality-head {
+    grid-template-columns: 1fr;
+  }
+  .messages {
+    min-height: 300px;
+    padding: 18px 15px;
+    gap: 13px;
+  }
+  .feature {
+    padding: 19px;
+  }
+  .page-heading p {
+    font-size: var(--font-sm);
+  }
+  .section-head h2 {
+    font-size: var(--font-xl);
+  }
+  .panel-header {
+    padding: 17px 18px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .panel-header > div {
+    flex: 1 1 160px;
+  }
+  .bubble {
+    font-size: var(--font-sm);
+    padding: 12px 14px;
+  }
+  .prompts {
+    padding: 8px 14px 12px;
+  }
+  .chat-form {
+    padding: 14px;
+  }
+  .form-body,.preview,.agent-result,.support-output {
+    padding: 19px;
+  }
+  .score-card,.metric-panel {
+    padding: 21px;
+  }
+}
