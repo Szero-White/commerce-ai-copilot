@@ -2,6 +2,8 @@
 import json
 import time
 from .ollama import request_json, ModelUnavailable, count
+from .llm import llm_enabled, llm_info
+from . import gemini
 from .retrieval import search
 from .evidence import valid_cited_answer, context_window
 
@@ -38,8 +40,8 @@ def run_agent(store,settings,task):
     started=time.perf_counter()
     trace=[]
     token_in=token_out=0
-    if settings.llm_provider!='ollama':
-        return {"mode":"agent_disabled","answer":"Agent thực cần bật Ollama hỗ trợ tool calling. Chế độ mặc định không giả lập quyết định của LLM.",
+    if not llm_enabled(settings):
+        return {"mode":"agent_disabled","answer":"Agent thực cần bật LLM hỗ trợ tool calling (Ollama hoặc Gemini). Chế độ mặc định không giả lập quyết định của LLM.",
                 "steps":[],"approval_required":True,"tokens_in":0,"tokens_out":0,"latency_ms":0}
     messages=[{"role":"system","content":SYSTEM},{"role":"user","content":task}]
     answer=""
@@ -51,7 +53,10 @@ def run_agent(store,settings,task):
             payload={"model":settings.ollama_model,"messages":messages,"stream":False,
                      "tools":TOOLS,"options":{"num_predict":settings.max_output_tokens,"temperature":0.1,
                                               "num_ctx":settings.num_ctx}}
-            result=request_json(settings.ollama_url,"/api/chat",payload,settings.timeout_seconds)
+            if settings.llm_provider=='gemini':
+                result=gemini.chat_with_tools(settings,messages,TOOLS)
+            else:
+                result=request_json(settings.ollama_url,"/api/chat",payload,settings.timeout_seconds)
             prompt_tokens=count(result.get('prompt_eval_count'))
             max_prompt=max(max_prompt,prompt_tokens)
             token_in+=prompt_tokens
@@ -84,7 +89,7 @@ def run_agent(store,settings,task):
             messages.append({"role":"tool","tool_name":name,"content":json.dumps(tool_result,ensure_ascii=False)})
     except ModelUnavailable as exc:
         llm_failed=True
-        answer=f"Không kết nối được mô hình Ollama: {str(exc)[:120]}"
+        answer=f"Không kết nối được mô hình ({settings.llm_provider}): {str(exc)[:120]}"
     # Read-only tools produce verifiable document IDs; the LLM's final text
     # cannot claim it used other sources. Citation checks are not a substitute
     # for a human evaluating semantic factuality.
@@ -116,4 +121,4 @@ def run_agent(store,settings,task):
     store.log('agent',mode,elapsed,token_in,token_out)
     return {"mode":mode,"answer":answer,"steps":trace,"approval_required":True,
             "tokens_in":token_in,"tokens_out":token_out,"latency_ms":elapsed,
-            "context_window":context_window(settings,max_prompt)}
+            "context_window":context_window(settings,max_prompt),"llm":llm_info(settings)}

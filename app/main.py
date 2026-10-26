@@ -10,6 +10,8 @@ from .storage import Store
 from .services import question_answer, campaign_draft, evaluate_retrieval
 from .agent import run_agent
 from .ollama import ModelUnavailable, has_model, list_models
+from .llm import PROVIDERS, embedding_enabled, llm_enabled, llm_info
+from . import gemini
 from .support import triage_message
 
 
@@ -45,21 +47,28 @@ def create_app(data_path=None, settings=None):
 
     @app.get("/api/health")
     def health(probe: bool=False):
-        """Configuration only by default. ?probe=true also asks the local Ollama (GET /api/tags)."""
+        """Configuration only by default. ?probe=true also asks the configured provider(s) which models exist."""
         docs=store.documents()
+        embedding_on=embedding_enabled(settings)
         result={"status":"ok","documents":len(docs),"llm_provider":settings.llm_provider,
                 "embedding_provider":settings.embedding_provider,
+                "llm":llm_info(settings),
                 "vector_indexed":sum(bool(d["embedding_json"]) and d.get("embedding_model")==settings.embedding_model for d in docs),
-                "embedding_model":settings.embedding_model if settings.embedding_provider=="ollama" else None,
+                "embedding_model":settings.embedding_model if embedding_on else None,
                 "simulation":True,"public_data_only":True}
-        if probe and "ollama" in (settings.llm_provider,settings.embedding_provider):
-            try:
-                installed=list_models(settings)
-                result["ollama"]={"reachable":True,
-                    "llm_model_available":has_model(installed,settings.ollama_model) if settings.llm_provider=="ollama" else None,
-                    "embedding_model_available":has_model(installed,settings.embedding_model) if settings.embedding_provider=="ollama" else None}
-            except ModelUnavailable as exc:
-                result["ollama"]={"reachable":False,"error":str(exc)[:200]}
+        if probe and (llm_enabled(settings) or embedding_on):
+            probes={}
+            for provider in sorted({p for p in (settings.llm_provider,settings.embedding_provider) if p in PROVIDERS}):
+                try:
+                    installed=gemini.list_models(settings) if provider=="gemini" else list_models(settings)
+                    probes[provider]={"reachable":True,
+                        "llm_model_available":has_model(installed,settings.gemini_model if provider=="gemini" else settings.ollama_model) if settings.llm_provider==provider else None,
+                        "embedding_model_available":has_model(installed,settings.embedding_model) if settings.embedding_provider==provider else None}
+                except ModelUnavailable as exc:
+                    probes[provider]={"reachable":False,"error":str(exc)[:200]}
+            result["providers"]=probes
+            if "ollama" in probes:
+                result["ollama"]=probes["ollama"]  # kept for existing clients
         return result
 
     @app.get("/api/products")

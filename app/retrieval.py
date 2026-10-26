@@ -1,7 +1,7 @@
 """Hybrid BM25 + cosine similarity (RRF). No pretend vectors: semantic mode must be enabled."""
 import json
 import math
-from .ollama import embed, ModelUnavailable
+from .llm import embed, embedding_enabled, ModelUnavailable
 
 
 def cosine(a, b):
@@ -14,7 +14,7 @@ def cosine(a, b):
 
 
 def index_vectors(store, settings):
-    if settings.embedding_provider != "ollama":
+    if not embedding_enabled(settings):
         return {"enabled": False, "indexed": 0, "reason": "EMBEDDING_PROVIDER=off"}
     docs = [d for d in store.documents() if not d["embedding_json"] or d.get("embedding_model") != settings.embedding_model]
     if not docs:
@@ -39,7 +39,7 @@ def search(store, settings, query, k=3):
     for rank, d in enumerate(lexical, 1):
         ranking[d["id"]] = ranking.get(d["id"], 0.0) + 1/(40+rank)
     semantic_active = False
-    if settings.embedding_provider == "ollama":
+    if embedding_enabled(settings):
         try:
             query_vector = embed(settings, [query])[0]
             semantic = []

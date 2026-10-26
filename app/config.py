@@ -20,7 +20,11 @@ class Settings:
     ollama_url: str = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
     ollama_model: str = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
     embedding_provider: str = os.getenv("EMBEDDING_PROVIDER", "off").lower()
-    embedding_model: str = os.getenv("EMBEDDING_MODEL", "bge-m3")
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    # The model name tags stored vectors, so it is the one used by retrieval for any provider.
+    embedding_model: str = os.getenv("EMBEDDING_MODEL") or (
+        os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
+        if os.getenv("EMBEDDING_PROVIDER", "off").lower() == "gemini" else "bge-m3")
     timeout_seconds: int = max(3, min(_int_env("LLM_TIMEOUT_SECONDS", 45), 120))
     max_output_tokens: int = max(64, min(_int_env("MAX_OUTPUT_TOKENS", 256), 512))
     num_ctx: int = max(1024, min(_int_env("OLLAMA_NUM_CTX", 4096), 32768))
