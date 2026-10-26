@@ -102,6 +102,7 @@ def main(argv=None) -> int:
     settings = replace(settings, data_path=db, **({"embedding_provider": "off"} if smoke else {}))
 
     last_generate = [0.0]
+    model_ms = [0.0]   # time spent inside the HTTP call only, excluding our own pacing sleeps
     real_send = gemini._send
 
     def paced_send(method, path, payload, timeout):
@@ -110,6 +111,11 @@ def main(argv=None) -> int:
             if wait > 0:
                 time.sleep(wait)
             last_generate[0] = time.monotonic()
+            started_call = time.perf_counter()
+            try:
+                return real_send(method, path, payload, timeout)
+            finally:
+                model_ms[0] += (time.perf_counter() - started_call) * 1000
         return real_send(method, path, payload, timeout)
 
     gemini._send = paced_send
@@ -184,6 +190,7 @@ def main(argv=None) -> int:
                 store.upsert(POISONED)
                 if not smoke:
                     retrieval.index_vectors(store, settings)  # embeds just the one new document
+            model_ms[0] = 0.0
             result = services.question_answer(store, settings, case["question"])
             ids = [s["id"] for s in result["sources"]]
             if case["expect"] == "abstain":
@@ -193,6 +200,7 @@ def main(argv=None) -> int:
             rows.append({"id": case["id"], "question": case["question"], "expect": case["expect"], "mode": result["mode"],
                          "retrieval_mode": result["retrieval_mode"], "retrieved_ids": ids, "answer": result["answer"],
                          "tokens_in": result["tokens_in"], "tokens_out": result["tokens_out"], "latency_ms": result["latency_ms"],
+                         "model_latency_ms": round(model_ms[0]),
                          "context_window": result["context_window"], "llm": result["llm"], "contract_pass": contract,
                          "human_factuality_review": "NOT_COMPLETED"})
             if gemini.stopped_reason():
@@ -212,10 +220,12 @@ def main(argv=None) -> int:
         # 6. agent tool-calling -----------------------------------------------
         report["agent"] = []
         for task in AGENT_TASKS[:1] if smoke else AGENT_TASKS:
+            model_ms[0] = 0.0
             run = agent.run_agent(store, settings, task)
             report["agent"].append({"task": task, "mode": run["mode"], "answer": run["answer"],
                                     "tools": [s["tool"] for s in run["steps"]], "tokens_in": run["tokens_in"],
                                     "tokens_out": run["tokens_out"], "latency_ms": run["latency_ms"],
+                                    "model_latency_ms": round(model_ms[0]), "rejection": run["rejection"],
                                     "context_window": run["context_window"], "llm": run["llm"]})
             if gemini.stopped_reason():
                 break

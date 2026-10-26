@@ -2,22 +2,23 @@
 
 > **Personal portfolio project on 100% synthetic data.** Not a NEXGEN BROS product and not a production system. It was built around the skills in a public *AI Engineer (LLM/RAG/AI Automation)* job description. The Vietnamese README is kept in [docs/README_VI.md](docs/README_VI.md).
 
-**Honest status in one line:** the retrieval, guards, API, evaluation and error handling are implemented and tested offline; the generative-LLM, embedding and agent paths (Ollama **and** a hosted Gemini free-tier adapter) are implemented but their answers have **only been exercised with mocks and fake HTTP servers. No real model answer has been evaluated.** Three live attempts against the Gemini free tier were aborted early (connection and a 3072-dimension embedding of the 16 documents worked; generation failed because the chosen 2.5 model is closed to new projects), which exposed and fixed real adapter and configuration bugs.
+**Honest status in one line:** retrieval, guards, API, evaluation and error handling are implemented and tested offline. The LLM path has been verified against a **real hosted model exactly once, as a small smoke test** (Gemini free tier, `gemini-3.5-flash-lite`, 3 cited answers all correct, 2 refusals, 1 tool-calling agent task whose final answer our validator rejected for a reason still to be diagnosed): see [docs/LIVE_EVALUATION_GEMINI.md](docs/LIVE_EVALUATION_GEMINI.md). Everything else on the LLM side (embeddings, hybrid retrieval, a meaningful sample size, local models) is still mock-only or unverified.
 
 ## What works, and how it was verified
 
 | Area | Status | Evidence |
 |---|---|---|
-| FastAPI service, SQLite FTS5 (BM25) retrieval, source citation, abstention | **Run for real (offline)** | 192 pytest tests, 8/8 offline acceptance, all endpoints exercised over HTTP against a live uvicorn |
+| FastAPI service, SQLite FTS5 (BM25) retrieval, source citation, abstention | **Run for real (offline)** | 196 pytest tests, 8/8 offline acceptance, all endpoints exercised over HTTP against a live uvicorn |
 | Retrieval relevance gate (IDF coverage, accent-aware match, out-of-scope phrases) | **Run for real (offline)** | 31 positive / 33 negative evaluation questions ([report](docs/EVALUATION_REPORT.md)) |
 | Evidence guards: numbers, promises, negated policies, audience injection | **Run for real (offline)** | Unit + API regression tests. Pattern matching only; see limits below |
 | Support-ticket triage (rules, human review required) | **Run for real (offline)** | Deterministic, **not** an AI agent |
 | Ollama adapter robustness (timeouts, bad JSON, redirects, proxies, HTTP errors) | **Real sockets, fake model** | `tests/test_ollama_resilience.py` talks to a local fake server |
-| Gemini free-tier adapter (host/model allowlists, key handling, request budget, stop on quota/billing, function calling) | **Real sockets, fake server** | `tests/test_gemini_adapter.py` (25 tests); `scripts/live_eval.py` has been started three times and **aborted** (see evaluation report §4); no successful live evaluation yet |
+| Gemini free-tier adapter (host/model allowlists, key handling, request budget, per-text embedding limiter + cache, stop on quota/billing, function calling) | **Real sockets, fake server, plus one real smoke run** | `tests/test_gemini_adapter.py`; live smoke: [LIVE_EVALUATION_GEMINI.md](docs/LIVE_EVALUATION_GEMINI.md) |
+| Real-model answers with citations (3 questions), negated policy preserved, injected instruction not repeated (1 case) | **Real, hosted, tiny sample** | same report; reviewer was an AI, not an independent human |
 | LLM answer path with citation/claim checks, campaign LLM draft | **Mock only** | `ollama_chat` is monkeypatched; proves control flow, not model quality |
 | Tool-calling agent (2 read-only tools, 3-step loop) | **Mock only** | `request_json` is monkeypatched |
 | Hybrid BM25 + vector (RRF) retrieval | **Mock only** | Fake embeddings; the 0.38 similarity threshold is **uncalibrated** |
-| Real LLM / embedding quality, latency, token counts, faithfulness, `num_ctx` behaviour | **NOT verified** | Needs a real model: see [live verification options](docs/LIVE_LLM_VERIFICATION_OPTIONS.md) |
+| Real embeddings / hybrid retrieval, the 0.38 threshold, faithfulness beyond 3 answers, agent final answers, any local model | **NOT verified** | Needs a real model: see [live verification options](docs/LIVE_LLM_VERIFICATION_OPTIONS.md) |
 | LangChain / LlamaIndex / LangGraph, vector DB, Shopify / Ads APIs, auth, deployment | **Not implemented** | |
 
 ## Quick start (Windows, no model required)
@@ -25,7 +26,7 @@
 ```powershell
 python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements-dev.txt
-.venv\Scripts\python -m pytest -q                       # 192 passed
+.venv\Scripts\python -m pytest -q                       # 196 passed
 .venv\Scripts\python -m scripts.portfolio_check         # 8/8 offline acceptance
 .venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
@@ -72,7 +73,7 @@ Details and design decisions: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Repository map
 
-`app/` service · `data/` synthetic catalogue, policies and evaluation sets · `tests/` 192 tests · `scripts/` ingest, index, offline acceptance, live verification · `docs/` architecture, evaluation, demo script, CV text, live-verification options, audit history · `web/` static UI.
+`app/` service · `data/` synthetic catalogue, policies and evaluation sets · `tests/` 196 tests · `scripts/` ingest, index, offline acceptance, live verification · `docs/` architecture, evaluation, demo script, CV text, live-verification options, audit history · `web/` static UI.
 
 ## Job-description mapping (honest)
 

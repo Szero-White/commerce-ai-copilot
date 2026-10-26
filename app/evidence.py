@@ -8,7 +8,8 @@ import re
 import unicodedata
 from .storage import normalize
 
-_CITE = re.compile(r"\[([A-Za-z0-9-]+)\]")
+# [PRD-101] and also the common LLM style [PRD-101, POL-001] (several IDs in one bracket).
+_CITE = re.compile(r"\[\s*([A-Za-z0-9-]+(?:\s*[,;]\s*[A-Za-z0-9-]+)*)\s*\]")
 # No letter/digit boundary: "130x60cm", "50k" and "Sale50%" must still yield numbers.
 _NUM = re.compile(r"\d+(?:[.,]\d+)*")
 # Commercial promises with serious consequences, regardless of whether they
@@ -53,7 +54,7 @@ def context_window(settings, prompt_tokens: int) -> dict:
 
 
 def citation_ids(text: str) -> set[str]:
-    return set(_CITE.findall(text))
+    return {i.strip() for group in _CITE.findall(text) for i in re.split(r"[,;]", group) if i.strip()}
 
 
 def evidence_text(items: list[dict]) -> str:
@@ -107,21 +108,29 @@ def unsupported_claims(answer: str, sources: list[dict]) -> list[str]:
     return _sentence_problems(_CITE.sub("", answer), _source_sentences(sources))
 
 
+def answer_problems(answer: str, sources: list[dict]) -> list[str]:
+    """Why an answer fails validation (empty list = nothing flagged). Same rules as valid_cited_answer."""
+    ids = citation_ids(answer)
+    by_id = {s['id']: s for s in sources}
+    if not ids:
+        return ["no source citation like [ID]"]
+    if not ids <= set(by_id):
+        return [f"cites sources that were not read: {sorted(ids - set(by_id))}"]
+    body = _CITE.sub("", answer)
+    cited = [by_id[doc_id] for doc_id in ids]
+    extra = numbers(body) - numbers(evidence_text(cited))
+    if extra:
+        return [f"numbers not present in the cited sources: {sorted(extra)}"]
+    return unsupported_claims(answer, cited)
+
+
 def valid_cited_answer(answer: str, sources: list[dict]) -> bool:
     """Checks source IDs, numerical literals and negated/unaffirmed promises (NOT semantic grounding).
 
     Numerical literals in the answer must be present in *cited* sources. This
     prevents a fabricated 90% offer even when another uncited document has 90%.
     """
-    ids = citation_ids(answer)
-    by_id = {s['id']: s for s in sources}
-    if not ids or not ids <= set(by_id):
-        return False
-    body = _CITE.sub("", answer)
-    cited = [by_id[doc_id] for doc_id in ids]
-    if numbers(body) - numbers(evidence_text(cited)):
-        return False
-    return not unsupported_claims(answer, cited)
+    return not answer_problems(answer, sources)
 
 
 def safe_marketing_copy(candidate: dict, product: dict) -> bool:

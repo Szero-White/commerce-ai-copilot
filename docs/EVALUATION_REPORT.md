@@ -1,12 +1,12 @@
 # Evaluation report — v3.0 (offline, no LLM)
 
-Produced by running the code in this repository on 2026-10-26 (Windows 11, Python 3.14.6, no GPU). **No language-model answer was evaluated.** Two aborted live attempts against the Gemini free tier are described in section 4. Do not read these numbers as answer quality.
+Produced by running the code in this repository on 2026-10-26 (Windows 11, Python 3.14.6, no GPU). Only one tiny real-model smoke run exists (section 4 and [LIVE_EVALUATION_GEMINI.md](LIVE_EVALUATION_GEMINI.md)). Do not read these numbers as answer quality.
 
 ## 1. Test suite
 
 | Check | Result |
 |---|---|
-| `python -m pytest -q` | **192 passed** |
+| `python -m pytest -q` | **196 passed** |
 | `python -m scripts.portfolio_check` | **8/8** offline workflow checks (no longer needs `ignore_cleanup_errors`: SQLite connections are now closed) |
 | HTTP smoke test against live uvicorn, LLM off | `/`, health, chat (incl. the former leaks), campaign, triage, agent (disabled), evaluation, metrics: all as expected |
 | Browser rendering | **Not tested** (no browser tool available). `node --check web/app.js` passes and all element IDs used by the script exist in the HTML |
@@ -45,9 +45,9 @@ Known bypasses: wording not in the lists; a sentence mixing a true and a false c
 
 Demo-visible fixes in this round: extractive answers now cut at sentence boundaries (the "not eligible for free return" exclusion of POL-002 was previously cut off); campaign templates no longer include internal notes ("Do not claim stock…"), SKUs or prices; the agent's `search_policy` tool is no longer starved by product hits.
 
-## 4. Live (hosted) evaluation: attempted three times, NOT completed
+## 4. Live (hosted) evaluation: one smoke run succeeded; the full evaluation has not run
 
-The owner created a Google AI Studio project (Free Tier, billing not set up), supplied a key through `run_gemini_live.ps1`, and ran `scripts/live_eval.py` three times (two full-mode attempts, then the smoke mode). **None of the runs obtained a single generated answer, so there are still no measurements of answer faithfulness, hybrid retrieval quality, the 0.38 cosine threshold, generation latency or token use, or tool-calling reliability.** What the attempts did show (hosted `gemini-embedding-001` / `gemini-2.5-flash`, synthetic data, free tier):
+The owner created a Google AI Studio project (Free Tier, billing not set up), supplied a key through `run_gemini_live.ps1`, and ran `scripts/live_eval.py` three times (two full-mode attempts, then the smoke mode). The first two runs (full mode) and an initial smoke attempt produced no answer; the fourth run (smoke, `gemini-3.5-flash-lite`) did: 3 correct cited answers (AI-reviewed), 2 correct refusals without a model call, and 1 agent task whose final answer was rejected by the validator (reason not recorded; diagnostics added since). Details, token counts and the latency caveat are in [LIVE_EVALUATION_GEMINI.md](LIVE_EVALUATION_GEMINI.md). **Still no measurements of hybrid retrieval quality, the 0.38 cosine threshold, faithfulness on a useful sample, or agent final-answer reliability.** What the attempts did show (hosted `gemini-embedding-001` / `gemini-2.5-flash`, synthetic data, free tier):
 
 | Observation | Evidence |
 |---|---|

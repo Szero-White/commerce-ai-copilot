@@ -157,3 +157,42 @@ def test_f4_campaign_off_and_safety_modes_unchanged(tmp_path, monkeypatch):
     monkeypatch.setattr(services, 'ollama_chat', lambda *a, **k: (
         json.dumps({'headline': 'Tốt nhất', 'body': 'Miễn phí giao hàng', 'cta': 'Mua'}), 3, 3))
     assert client(tmp_path).post('/api/campaign', json={'sku': 'PRD-101', 'audience': 'office staff'}).json()['mode'] == 'template_safety_fallback'
+
+
+# Citation formats and rejection diagnostics (found by the first real-model agent run) -----------------
+def test_ids_grouped_in_one_bracket_are_read_as_citations():
+    from app.evidence import citation_ids
+    assert citation_ids('A [PRD-101, POL-001] B [POL-002] C [X1;Y2]') == {'PRD-101', 'POL-001', 'POL-002', 'X1', 'Y2'}
+    sources = DESK + [{'id': 'POL-001', 'title': 'd', 'content': 'Giao hàng trong 2 đến 4 ngày làm việc.'}]
+    assert valid_cited_answer('Bàn rộng 120 cm và giao trong 2 đến 4 ngày [PRD-101, POL-001]', sources)
+    assert not valid_cited_answer('Bàn rộng 120 cm [PRD-101, FAKE-9]', sources)
+
+
+def test_answer_problems_names_the_failed_rule():
+    from app.evidence import answer_problems
+    assert 'no source citation' in answer_problems('Bàn rộng 120 cm', DESK)[0]
+    assert 'not read' in answer_problems('Bàn rộng 120 cm [NOPE-1]', DESK)[0]
+    assert "['130']" in answer_problems('Bàn rộng 130 cm [PRD-101]', DESK)[0]
+    assert answer_problems('Bàn rộng 120 cm [PRD-101]', DESK) == []
+
+
+def test_agent_rejection_carries_reasons_for_the_reviewer(tmp_path, monkeypatch):
+    from app import agent
+    replies = iter([
+        {'message': {'tool_calls': [{'function': {'name': 'lookup_product', 'arguments': {'sku': 'PRD-101'}}}]}},
+        {'message': {'content': 'Bàn Oak rộng 130 cm [PRD-101]'}}])
+    monkeypatch.setattr(agent, 'request_json', lambda *a, **k: next(replies))
+    result = client(tmp_path).post('/api/agent', json={'task': 'Tra cứu sản phẩm PRD-101'}).json()
+    assert result['mode'] == 'agent_answer_rejected'
+    assert "['130']" in result['rejection']['reasons'][0] and '130 cm' in result['rejection']['unverified_draft']
+    assert '130' not in result['answer']          # the draft is never presented as the answer
+
+
+def test_agent_accepts_grouped_citations(tmp_path, monkeypatch):
+    from app import agent
+    replies = iter([
+        {'message': {'tool_calls': [{'function': {'name': 'lookup_product', 'arguments': {'sku': 'PRD-101'}}}]}},
+        {'message': {'content': 'Bàn Oak mặt 120 x 60 cm [PRD-101, PRD-101]'}}])
+    monkeypatch.setattr(agent, 'request_json', lambda *a, **k: next(replies))
+    result = client(tmp_path).post('/api/agent', json={'task': 'Tra cứu sản phẩm PRD-101'}).json()
+    assert result['mode'] == 'tool_calling_agent' and result['rejection'] is None

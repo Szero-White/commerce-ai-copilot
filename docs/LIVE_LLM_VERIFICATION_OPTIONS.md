@@ -3,7 +3,7 @@
 ## Status update (2026-10-26, later session)
 
 - Option **C (Google Gemini API free tier)** was chosen and **implemented**: `app/gemini.py`, `app/llm.py`, `scripts/live_eval.py`, 25 mock tests. The official pricing page lists `gemini-2.5-flash`, `gemini-2.5-flash-lite` and `gemini-embedding-2` (plus newer Flash models) as free of charge and says free-tier content may be used to improve Google products (so: synthetic data only). The adapter allowlist is `gemini-3.8-flash`, `gemini-3.6-flash`, `gemini-3.5-flash-lite` (default), `gemini-3.1-flash-lite`, the 2.5 flash models (closed to new projects: they return HTTP 404), `gemini-embedding-001` and `gemini-embedding-2`. Each live report lists which of these the key can actually call.
-- **Live runs so far:** the owner later created a dedicated Free Tier AI Studio project and ran the launcher twice; both runs were aborted by adapter defects that have since been fixed (see `EVALUATION_REPORT.md` §4). The answer-quality evaluation has still not run.
+- **Live runs so far:** the owner later created a dedicated Free Tier AI Studio project and ran the launcher twice; both runs were aborted by adapter defects that have since been fixed (see `EVALUATION_REPORT.md` §4). A later smoke run with `gemini-3.5-flash-lite` succeeded for generation (see [LIVE_EVALUATION_GEMINI.md](LIVE_EVALUATION_GEMINI.md)); the full evaluation (embeddings, hybrid retrieval, calibration, campaigns) has not run.
 - To unblock safely: create a *new* key in a *new* Google AI Studio project with no billing account linked (AI Studio shows the plan next to the key), then in a fresh terminal:
 
 ```powershell
