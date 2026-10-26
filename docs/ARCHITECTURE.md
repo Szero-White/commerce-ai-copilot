@@ -1,0 +1,41 @@
+# Architecture and design decisions
+
+## Request flows
+
+**`POST /api/chat`**
+1. `retrieval.search` → `storage.fts_search` (FTS5/BM25 over diacritic-stripped text) → relevance gate. If Ollama embeddings are enabled and indexed, cosine scores are fused with BM25 by reciprocal-rank fusion (RRF).
+2. No sources → `no_evidence` (no model call).
+3. `LLM_PROVIDER=off` → `extractive_demo` (cited passages; this is retrieval, not generation).
+4. `LLM_PROVIDER=ollama` → context packed to `MAX_CONTEXT_CHARS` without cutting source IDs → `ollama.chat` with explicit `num_ctx` → `evidence.valid_cited_answer`. Accepted → `llm_rag_cited`; rejected → `llm_citation_rejected_extractive`; Ollama failure → `llm_unavailable_extractive`. The response carries `context_window` (`prompt_tokens`, `num_ctx`, `near_limit`) when a model was called.
+
+**`POST /api/campaign`** — builds a template from the product record; with Ollama, asks for a JSON draft. Every candidate (template included) passes `safe_marketing_copy`. The free-text `audience` is only used if `safe_audience` accepts it. Always `DRAFT_REQUIRES_HUMAN_APPROVAL`; nothing is published.
+
+**`POST /api/agent`** — only with Ollama. At most 3 model turns, 2 tool calls, tools `lookup_product` and `search_policy` (read-only, bounded output). Unknown tool → `agent_tool_blocked`. The final answer must cite documents the tools actually returned, else `agent_answer_rejected`.
+
+**`POST /api/support/triage`** — keyword rules decide intent, priority and team; retrieval only supplies policy evidence. No LLM, no order data, human review required.
+
+**`GET /api/evaluation`** — Hit@3 over `data/eval_set.json` and "correct refusal" over `data/negative_eval_set.json`. It measures retrieval, not answers.
+
+## Modules
+
+| File | Responsibility |
+|---|---|
+| `app/storage.py` | SQLite schema, FTS5 index, `fts_search` with the relevance gate |
+| `app/retrieval.py` | hybrid search, vector indexing, stale-model protection (`embedding_model` column) |
+| `app/evidence.py` | citation IDs, numbers, promise blocklist, negation check, audience filter, context-window report |
+| `app/ollama.py` | the only network code: loopback-only HTTP, no proxies, no redirects, bounded reads, defensive JSON handling, `/api/tags` probe |
+| `app/services.py`, `app/agent.py`, `app/support.py` | workflows |
+| `app/main.py`, `web/` | API and static UI |
+
+## Key decisions
+
+- **Fail closed, label everything.** Each degraded path has its own `mode` string so metrics and the UI cannot confuse "LLM off", "LLM failed", "answer rejected" and "no evidence".
+- **Relevance gate before the LLM.** FTS OR-queries return anything sharing one word. The gate requires that the IDF-weighted share of query terms found in a document reaches 0.5, matches diacritics when the user typed them, checks every number (including single digits) and refuses a short list of clearly out-of-domain topics. Rare and unknown words weigh more than common ones.
+- **Guards are sentence-level and conservative.** A promise in the answer needs an *affirmative* sentence in the cited source; a topic that the source only negates may not be affirmed; a sentence that itself contains a negation is allowed. This is a pattern check, not entailment.
+- **Explicit `num_ctx`.** Otherwise the server's default window can silently drop the start of a long prompt, where the instructions are.
+- **Local-only by policy.** Prompts and documents never leave the machine; the adapter refuses other hosts. Adding a hosted free API would be a deliberate policy change (see the live-verification options).
+- **SQLite + brute-force cosine** is fine for 15 documents; pgvector or a vector DB would be the next step at scale. Not implemented.
+
+## Not built (on purpose)
+
+LangGraph/LangChain, vector databases, Shopify/Meta/Google Ads integrations, authentication, queues, deployment. They would add surface area without making the unverified LLM path any more proven.

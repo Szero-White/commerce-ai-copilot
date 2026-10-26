@@ -1,5 +1,7 @@
 # Commerce AI Copilot v2.1 — release acceptance record
 
+> **Historical (v2.1).** Superseded by [EVALUATION_REPORT.md](EVALUATION_REPORT.md) (v3.0: 127 tests). Correction found in the independent audit: v2.1 actually contains **37** tests; the 35 below was stale.
+
 ## What has actually been measured in the build environment
 
 - `python -m pytest -q` — **35 passed** (offline; includes a **fake Ollama local HTTP server**, not a real model).

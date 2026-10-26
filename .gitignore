@@ -7,3 +7,6 @@ runtime/
 .DS_Store
 
 reports/*.json
+dist/
+*.zip
+*.db

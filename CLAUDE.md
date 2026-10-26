@@ -37,7 +37,7 @@ Purpose: **personal, synthetic-data** portfolio for a Python AI Engineer in e-co
 - Request focused files; after each change run the nearest tests then full `python -m pytest -q`.
 
 ## v2.1 acceptance and independent peer review
-- Always establish baseline with `python -m pytest -q` (expected 37 tests) and `python -m scripts.portfolio_check` (expected 8 offline cases). Both are synthetic/offline and CANNOT prove real model capabilities.
+- Always establish baseline with `python -m pytest -q` (expected 127 tests at v3.0; 37 at v2.1) and `python -m scripts.portfolio_check` (expected 8 offline cases). Both are synthetic/offline and CANNOT prove real model capabilities.
 - New evidence rules: `app/evidence.py` is a conservative guard for citation IDs, numeric claims, and marketing promises. Inspect it before changing RAG, campaigns, or agents. Never describe it as full hallucination prevention.
 - Ollama adapter intentionally rejects non-local network hosts; don't remove this protection or add paid APIs without explicit approval.
 - For independent review, follow `docs/tasks/03_CLAUDE_V2_1_INDEPENDENT_AUDIT.md`; begin read-only.
