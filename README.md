@@ -2,18 +2,18 @@
 
 > **Personal portfolio project on 100% synthetic data.** Not a NEXGEN BROS product and not a production system. It was built around the skills in a public *AI Engineer (LLM/RAG/AI Automation)* job description. The Vietnamese README is kept in [docs/README_VI.md](docs/README_VI.md).
 
-**Honest status in one line:** the retrieval, guards, API, evaluation and error handling are implemented and tested offline; the generative-LLM, embedding and agent paths (Ollama **and** a hosted Gemini free-tier adapter) are implemented but have **only been exercised with mocks and fake HTTP servers. No real model has been run, and no request has ever been sent to Google or any hosted service.**
+**Honest status in one line:** the retrieval, guards, API, evaluation and error handling are implemented and tested offline; the generative-LLM, embedding and agent paths (Ollama **and** a hosted Gemini free-tier adapter) are implemented but their answers have **only been exercised with mocks and fake HTTP servers. No real model answer has been evaluated.** Two live attempts against the Gemini free tier were aborted early (connection and a 3072-dimension embedding of the 16 documents worked; the evaluation itself did not run), which exposed and fixed real adapter bugs.
 
 ## What works, and how it was verified
 
 | Area | Status | Evidence |
 |---|---|---|
-| FastAPI service, SQLite FTS5 (BM25) retrieval, source citation, abstention | **Run for real (offline)** | 165 pytest tests, 8/8 offline acceptance, all endpoints exercised over HTTP against a live uvicorn |
+| FastAPI service, SQLite FTS5 (BM25) retrieval, source citation, abstention | **Run for real (offline)** | 186 pytest tests, 8/8 offline acceptance, all endpoints exercised over HTTP against a live uvicorn |
 | Retrieval relevance gate (IDF coverage, accent-aware match, out-of-scope phrases) | **Run for real (offline)** | 31 positive / 33 negative evaluation questions ([report](docs/EVALUATION_REPORT.md)) |
 | Evidence guards: numbers, promises, negated policies, audience injection | **Run for real (offline)** | Unit + API regression tests. Pattern matching only; see limits below |
 | Support-ticket triage (rules, human review required) | **Run for real (offline)** | Deterministic, **not** an AI agent |
 | Ollama adapter robustness (timeouts, bad JSON, redirects, proxies, HTTP errors) | **Real sockets, fake model** | `tests/test_ollama_resilience.py` talks to a local fake server |
-| Gemini free-tier adapter (host/model allowlists, key handling, request budget, stop on quota/billing, function calling) | **Real sockets, fake server** | `tests/test_gemini_adapter.py` (25 tests); `scripts/live_eval.py` is written but **never run** |
+| Gemini free-tier adapter (host/model allowlists, key handling, request budget, stop on quota/billing, function calling) | **Real sockets, fake server** | `tests/test_gemini_adapter.py` (25 tests); `scripts/live_eval.py` has been started twice and **aborted** (see evaluation report §4); no successful live evaluation yet |
 | LLM answer path with citation/claim checks, campaign LLM draft | **Mock only** | `ollama_chat` is monkeypatched; proves control flow, not model quality |
 | Tool-calling agent (2 read-only tools, 3-step loop) | **Mock only** | `request_json` is monkeypatched |
 | Hybrid BM25 + vector (RRF) retrieval | **Mock only** | Fake embeddings; the 0.38 similarity threshold is **uncalibrated** |
@@ -25,14 +25,14 @@
 ```powershell
 python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements-dev.txt
-.venv\Scripts\python -m pytest -q                       # 165 passed
+.venv\Scripts\python -m pytest -q                       # 186 passed
 .venv\Scripts\python -m scripts.portfolio_check         # 8/8 offline acceptance
 .venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 Open http://127.0.0.1:8000 (UI) or http://127.0.0.1:8000/docs (Swagger). By default `LLM_PROVIDER=off` and `EMBEDDING_PROVIDER=off`, so `/api/chat` returns **extractive, cited passages — this is retrieval, not generative RAG**.
 
-Optional hosted LLM (**not run**; see `docs/LIVE_LLM_VERIFICATION_OPTIONS.md`): `LLM_PROVIDER=gemini EMBEDDING_PROVIDER=gemini`, key only in the `GEMINI_API_KEY` environment variable, then `GEMINI_CONFIRM_FREE_TIER=yes python -m scripts.live_eval` (about 40 requests, free-tier models only, stops on quota/billing). Free-tier content may be used by Google to improve its products, so only synthetic data is ever sent, and any report must say "hosted", not "local".
+Optional hosted LLM (**not run**; see `docs/LIVE_LLM_VERIFICATION_OPTIONS.md`): `LLM_PROVIDER=gemini EMBEDDING_PROVIDER=gemini`, key only in the `GEMINI_API_KEY` environment variable, then run the secure launcher `run_gemini_live.ps1` (hidden key prompt, key only in that process). Default is a **smoke test**: 3 RAG answers + 1 agent task with lexical retrieval and Gemini generation, about 7 requests, nothing embedded. `python -m scripts.live_eval --full` adds embeddings (metered per text: 60 texts/minute, on-disk cache, text budget), hybrid retrieval, calibration and campaigns. Free-tier content may be used by Google to improve its products, so only synthetic data is ever sent, and any report must say "hosted", not "local".
 
 Optional local LLM (not run by the author): set `LLM_PROVIDER=ollama`, `EMBEDDING_PROVIDER=ollama`, pull models, run `python -m scripts.index_embeddings`, then `python -m scripts.verify_live_rag`, which refuses to run (and claims nothing) unless Ollama and both models are actually present.
 
@@ -72,7 +72,7 @@ Details and design decisions: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Repository map
 
-`app/` service · `data/` synthetic catalogue, policies and evaluation sets · `tests/` 165 tests · `scripts/` ingest, index, offline acceptance, live verification · `docs/` architecture, evaluation, demo script, CV text, live-verification options, audit history · `web/` static UI.
+`app/` service · `data/` synthetic catalogue, policies and evaluation sets · `tests/` 186 tests · `scripts/` ingest, index, offline acceptance, live verification · `docs/` architecture, evaluation, demo script, CV text, live-verification options, audit history · `web/` static UI.
 
 ## Job-description mapping (honest)
 

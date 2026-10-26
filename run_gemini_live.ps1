@@ -7,7 +7,8 @@
        in PowerShell history);
     2. sets the key and the run settings as environment variables of THIS process only, which the
        Python child inherits; nothing is written to a file, to Git or to the Windows environment;
-    3. runs  .venv\Scripts\python.exe -m scripts.live_eval  (about 25 requests, hard limit 40);
+    3. runs  .venv\Scripts\python.exe -m scripts.live_eval  = SMOKE test: 3 RAG answers + 1 agent task, no
+       embeddings, about 7 requests (hard limit 40);
     4. masks the key in any output line, and in a `finally` block restores every variable it touched
        to its previous value, even if the run fails or you press Ctrl+C.
 
@@ -41,7 +42,7 @@ try {
     } else {
         Write-Host ''
         Write-Host 'This will send ONLY synthetic catalogue/policy text and demo questions to the Gemini API'
-        Write-Host '(models gemini-2.5-flash and gemini-embedding-001, max 40 requests).'
+        Write-Host '(smoke test: model gemini-2.5-flash only, about 7 requests, nothing is embedded; hard limit 40).'
         Write-Host 'Use a key from a Google AI Studio project that shows "Free Tier" and has NO billing set up.'
         $secure = Read-Host 'Paste the API key (input is hidden)' -AsSecureString
         $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)

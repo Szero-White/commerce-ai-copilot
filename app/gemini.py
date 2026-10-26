@@ -5,7 +5,13 @@ Rules enforced here, not left to configuration:
 - the API key comes from the GEMINI_API_KEY environment variable, is sent in a header (never in a
   URL) and is scrubbed from every error message; it is never stored in Settings or logged;
 - only models on the free-tier allowlist may be called (a paid model raises before any request);
-- a hard per-process request budget, at most one retry, and a permanent stop on quota/billing errors.
+- a hard per-process request budget and a hard budget of TEXTS embedded;
+- embeddings are metered per TEXT, not per HTTP request, so they go through a rate limiter that
+  spaces batches by the number of texts they carry (default 60 texts/minute against a 100 RPM tier);
+- an on-disk cache means an unchanged text is never embedded twice (see embedding_cache.py);
+- errors are classified by HTTP status first: 429 is ALWAYS a rate/quota problem (never "billing",
+  whatever the body says) and stops the process without retrying; 5xx gets one retry; 401/403 or
+  FAILED_PRECONDITION stop everything as an auth/billing problem.
 Only synthetic catalogue/policy text should ever be sent through this adapter.
 """
 import json
@@ -14,9 +20,12 @@ import threading
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
+from pathlib import Path
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from http.client import HTTPException
 
+from .config import ROOT
+from .embedding_cache import EmbeddingCache
 from .ollama import ModelUnavailable, count
 
 BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
@@ -26,11 +35,40 @@ ALLOWED_HOSTS = ("generativelanguage.googleapis.com",)
 FREE_MODELS = {"gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-embedding-001", "gemini-embedding-2"}
 MAX_REQUESTS = int(os.getenv("GEMINI_MAX_REQUESTS", "150"))
 MAX_RESPONSE_BYTES = 3_000_000
-# One 3072-dimension vector is about 60 KB of JSON; 16 per request stays far below the cap.
-EMBED_BATCH = 16
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+# Embeddings: the 100 RPM free tier counts every text in a batch. Stay well below it.
+def _clamp_rate(value) -> int:
+    """Texts per minute: default 60, never above 90 (a 100 RPM tier needs headroom), never below 1."""
+    try:
+        return min(max(int(value), 1), 90)
+    except (TypeError, ValueError):
+        return 60
+
+
+EMBED_TEXTS_PER_MINUTE = _clamp_rate(os.getenv("GEMINI_EMBED_TEXTS_PER_MINUTE", "60"))
+EMBED_BATCH = 8
+MAX_EMBED_TEXTS = _int_env("GEMINI_MAX_EMBED_TEXTS", 200)  # per process; the free tier allows ~1000/day
+CACHE_ENABLED = os.getenv("GEMINI_EMBED_CACHE", "on").lower() != "off"
+CACHE_PATH = Path(os.getenv("EMBEDDING_CACHE_PATH", str(ROOT / "runtime" / "embedding_cache.db")))
 
 _lock = threading.Lock()
-_state = {"requests": 0, "stopped": None}
+_state = {"requests": 0, "stopped": None, "embed_texts": 0, "embed_next_at": 0.0}
+
+
+def _now() -> float:
+    return time.monotonic()
+
+
+def _sleep(seconds: float):
+    time.sleep(seconds)
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -43,11 +81,20 @@ _OPENER = build_opener(_NoRedirect)
 
 def reset_budget():
     with _lock:
-        _state.update(requests=0, stopped=None)
+        _state.update(requests=0, stopped=None, embed_texts=0, embed_next_at=0.0)
 
 
 def requests_made() -> int:
     return _state["requests"]
+
+
+def embed_texts_sent() -> int:
+    return _state["embed_texts"]
+
+
+def stopped_reason():
+    """Why this process stopped calling Gemini (quota, auth/billing), or None."""
+    return _state["stopped"]
 
 
 def _key() -> str:
@@ -71,6 +118,26 @@ def _check_url(url: str):
 def _check_model(model: str):
     if model not in FREE_MODELS:
         raise ModelUnavailable(f"Model '{model}' is not on the free-tier allowlist; refusing to call it")
+
+
+def _error_info(body: str) -> dict:
+    try:
+        data = json.loads(body)
+    except ValueError:
+        return {}
+    error = data.get("error") if isinstance(data, dict) else None
+    return error if isinstance(error, dict) else {}
+
+
+def _is_daily_quota(error: dict, body: str) -> bool:
+    ids = []
+    for detail in error.get("details") or []:
+        if isinstance(detail, dict):
+            for violation in detail.get("violations") or []:
+                if isinstance(violation, dict):
+                    ids.append(f"{violation.get('quotaId', '')} {violation.get('quotaMetric', '')}")
+    text = (" ".join(ids) or body).lower().replace("_", "").replace(" ", "")
+    return "perday" in text or "daily" in text
 
 
 def _send(method: str, path: str, payload, timeout: int):
@@ -97,31 +164,28 @@ def _send(method: str, path: str, payload, timeout: int):
             return data
         except HTTPError as exc:
             try:
-                body = exc.read(500).decode("utf-8", "replace")
+                body = exc.read(4000).decode("utf-8", "replace")
             except Exception:
                 body = ""
             body = _scrub(body)
-            lowered = body.lower()
-            if exc.code in (401, 403) or "billing" in lowered or "failed_precondition" in lowered:
+            error = _error_info(body)
+            status = str(error.get("status", "")).upper()
+            if exc.code == 429:
+                # Classified by status code ALONE: the body of a rate-limit error may mention
+                # "billing" or "plan" without the project having any billing problem.
+                kind = "daily quota" if _is_daily_quota(error, body) else "per-minute rate limit"
+                _state["stopped"] = f"HTTP 429 {kind}; stopped without retrying"
+                raise ModelUnavailable(f"HTTP 429 from Gemini ({kind}, not an auth/billing error): {body[:200]}") from exc
+            if exc.code in (401, 403) or status in ("PERMISSION_DENIED", "UNAUTHENTICATED", "FAILED_PRECONDITION"):
                 _state["stopped"] = f"HTTP {exc.code} (auth/billing); not retrying"
                 raise ModelUnavailable(f"HTTP {exc.code} from Gemini (auth or billing): {body[:200]}") from exc
-            if exc.code == 429:
-                if attempt == 1 and "perday" not in lowered.replace(" ", "").replace("_", ""):
-                    time.sleep(min(_retry_after(exc), 30))
-                    continue
-                _state["stopped"] = "HTTP 429 quota/rate limit; stopped instead of retrying"
-                raise ModelUnavailable(f"HTTP 429 from Gemini (quota): {body[:200]}") from exc
+            if exc.code in (500, 502, 503, 504) and attempt == 1:
+                _sleep(5)  # one retry for a transient server error, nothing more
+                continue
             raise ModelUnavailable(f"HTTP {exc.code} from Gemini: {body[:200]}") from exc
         except (URLError, TimeoutError, ValueError, OSError, HTTPException) as exc:
             raise ModelUnavailable(_scrub(str(exc))) from exc
     raise ModelUnavailable("Gemini request failed")
-
-
-def _retry_after(exc) -> float:
-    try:
-        return float(exc.headers.get("Retry-After", "10"))
-    except (TypeError, ValueError):
-        return 10.0
 
 
 def list_models(settings) -> list[str]:
@@ -169,24 +233,50 @@ def chat(settings, system, user, json_output=False):
     return answer, tokens_in, tokens_out
 
 
+def _wait_for_embed_slot(n_texts: int):
+    """Reserve the next slot so that batches are spaced by the number of TEXTS they carry."""
+    with _lock:
+        now = _now()
+        start = max(now, _state["embed_next_at"])
+        _state["embed_next_at"] = start + n_texts * 60.0 / EMBED_TEXTS_PER_MINUTE
+    if start > now:
+        _sleep(start - now)
+
+
 def embed(settings, texts):
     model = settings.embedding_model
     _check_model(model)
-    vectors = []
-    for start in range(0, len(texts), EMBED_BATCH):
-        chunk = texts[start:start + EMBED_BATCH]
+    texts = list(texts)
+    cache = EmbeddingCache(CACHE_PATH) if CACHE_ENABLED else None
+    known = cache.get_many(model, texts) if cache else {}
+    missing = [x for x in dict.fromkeys(texts) if x not in known]
+    with _lock:
+        remaining = MAX_EMBED_TEXTS - _state["embed_texts"]
+    if len(missing) > remaining:
+        raise ModelUnavailable(f"Gemini embed-text budget ({MAX_EMBED_TEXTS}) would be exceeded: "
+                               f"{len(missing)} new texts requested, {max(remaining, 0)} left; nothing was sent")
+    for start in range(0, len(missing), EMBED_BATCH):
+        chunk = missing[start:start + EMBED_BATCH]
+        _wait_for_embed_slot(len(chunk))
         payload = {"requests": [{"model": f"models/{model}", "content": {"parts": [{"text": x}]}} for x in chunk]}
+        with _lock:
+            _state["embed_texts"] += len(chunk)
         data = _send("POST", f"/models/{model}:batchEmbedContents", payload, settings.timeout_seconds)
         items = data.get("embeddings")
         if not isinstance(items, list) or len(items) != len(chunk):
             raise ModelUnavailable("Gemini returned invalid embeddings")
-        for item in items:
+        fresh = {}
+        for text, item in zip(chunk, items):
             values = item.get("values") if isinstance(item, dict) else None
             if (not isinstance(values, list) or not values
                     or any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in values)):
                 raise ModelUnavailable("Gemini returned a malformed embedding vector")
-            vectors.append(values)
-    if len({len(v) for v in vectors}) != 1:
+            fresh[text] = values
+        known.update(fresh)
+        if cache:
+            cache.put_many(model, fresh)  # saved per batch: a later 429 must not waste this work
+    vectors = [known[x] for x in texts]
+    if len({len(v) for v in vectors}) > 1:
         raise ModelUnavailable("Gemini returned inconsistent embedding dimensions")
     return vectors
 
