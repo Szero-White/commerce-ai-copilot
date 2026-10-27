@@ -2,11 +2,13 @@
 
 ## Request flows
 
-**`POST /api/chat`**
-1. `retrieval.search` → `storage.fts_search` (FTS5/BM25 over diacritic-stripped text) → relevance gate. If Ollama embeddings are enabled and indexed, cosine scores are fused with BM25 by reciprocal-rank fusion (RRF).
-2. No sources → `no_evidence` (no model call).
-3. `LLM_PROVIDER=off` → `extractive_demo` (cited passages; this is retrieval, not generation).
-4. `LLM_PROVIDER=ollama|gemini` → context packed to `MAX_CONTEXT_CHARS` without cutting source IDs → `ollama.chat` with explicit `num_ctx` → `evidence.valid_cited_answer`. Accepted → `llm_rag_cited`; rejected → `llm_citation_rejected_extractive`; Ollama failure → `llm_unavailable_extractive`. The response carries `context_window` (`prompt_tokens`, `num_ctx`, `near_limit`) when a model was called.
+**`POST /api/chat`** (v4)
+0. `dialogue.resolve`: an optional `turn_context` (the previous answer's document ids, echoed by the client and treated as untrusted) resolves "nó / cái thứ hai". Unambiguous → the search is restricted to that document and the answer says what it understood; ambiguous → `needs_clarification` with numbered options, no search.
+1. `query.analyze` reads the question using the documents' own vocabulary: "bàn" vs "bạn"/"bán" (typed diacritics decide; a plain spelling is searched but not required unless the documents use that word), filler words, typo repair (swaps, key slips, unique nearest known word only), intents (list/discovery, catalogue), comparison conditions and quantities (`quantities.py`), unknown names and model codes.
+2. `retrieval.search` → `storage.fts_search` (FTS5/BM25 candidates, IDF-coverage and proximity relevance gate) → **`gate.check_document` for every candidate**: names/codes must match exactly, numbers and quantities (with their unit family) must be stated, stock/offers need a stated figure, private data and order actions are answered by policy documents only, price/size comparisons are computed from the document's numbers (`satisfied` / `unverified`, the latter listed last and flagged). If embeddings are enabled and indexed, similarity only **re-ranks** documents the gate admitted (RRF); it never admits one (see EVALUATION_REPORT section 7 for why).
+3. No sources → `no_evidence` (no model call).
+4. `LLM_PROVIDER=off` → `extractive_demo` (cited passages, numbered when there are several; this is retrieval, not generation).
+5. `LLM_PROVIDER=ollama|gemini` → context packed to `MAX_CONTEXT_CHARS` without cutting source IDs → `ollama.chat` with explicit `num_ctx` → `evidence.valid_cited_answer`. Accepted → `llm_rag_cited`; rejected → `llm_citation_rejected_extractive`; Ollama failure → `llm_unavailable_extractive`. The response carries `context_window` (`prompt_tokens`, `num_ctx`, `near_limit`) when a model was called.
 
 **`POST /api/campaign`** — builds a template from the product record; with Ollama, asks for a JSON draft. Every candidate (template included) passes `safe_marketing_copy`. The free-text `audience` is only used if `safe_audience` accepts it. Always `DRAFT_REQUIRES_HUMAN_APPROVAL`; nothing is published.
 
@@ -20,8 +22,12 @@
 
 | File | Responsibility |
 |---|---|
-| `app/storage.py` | SQLite schema, FTS5 index, `fts_search` with the relevance gate |
-| `app/retrieval.py` | hybrid search, vector indexing, stale-model protection (`embedding_model` column) |
+| `app/storage.py` | SQLite schema, FTS5 index, `fts_search` with the relevance gate; atomic `apply` / `delete` / `delete_source`, `corpus_version` (in the database, so other processes' imports are seen), `consistency_report` |
+| `app/query.py` | question analysis from the corpus vocabulary (function-word collisions, typos, intents, pointers, data classes) |
+| `app/quantities.py` | numbers with units and comparison conditions; `evaluate` returns yes / no / unknown from document text only |
+| `app/gate.py` | `check_document` (hard constraints for any candidate) and `admit_semantic` (the rule a meaning-only match would have to meet; tested with synthetic scores, **not wired in**) |
+| `app/dialogue.py` | one-turn follow-up resolution; never guesses |
+| `app/retrieval.py` | gated lexical candidates, optional re-ranking by vectors, vector indexing, stale-model protection (`embedding_model` column) |
 | `app/evidence.py` | citation IDs, numbers, promise blocklist, negation check, audience filter, context-window report |
 | `app/ollama.py` | local network code: loopback-only HTTP, no proxies, no redirects, bounded reads, defensive JSON handling, `/api/tags` probe |
 | `app/gemini.py` | hosted free-tier adapter (separate file): only `generativelanguage.googleapis.com` over https, key from the environment sent in a header and scrubbed from errors, free-model allowlist, per-process request budget, one retry, permanent stop on quota/billing errors, function calling for the agent |

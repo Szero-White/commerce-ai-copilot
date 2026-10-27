@@ -208,8 +208,10 @@ Acceptance verdicts (PLAN V3 section 10): holdout criterion 4 (no-diacritics/typ
 near-miss -> PASS. Fresh criterion 7 (Hit@3 >= 80%): 63% -> **FAIL**; update/delete/consistency -> PASS. These FAILs are reported as measured;
 nothing was tuned on the holdout or on the fresh data. Holdout was opened only for this session. Real failures to read:
 - both sets: need-based / synonym questions (0/4 holdout, 0/2 fresh): they need meaning, not words (B1: semantic ranking is not an admission rule).
-- holdout typo 0/2: accent-level typos ("Fexl" repaired, but "hnagf" + other changes in one sentence; one is an accent slip such as
-  "Thanh tóan") are outside the repair rules (swaps / key slips on UNKNOWN words only).
+- holdout typo 0/2 (baseline 1/2): H16 "Fexl" is a rotation of "flex" (edit distance 2 under the swap/slip rules, so not repaired)
+  and H17 combines "tóan" (an accent slip: a known-looking word) with "hnagf" (extra letter + swap). Both are outside the rules.
+  The other 9 holdout misses (H02, H03, H10-H12, H18-H21 besides H16/H17) are paraphrases whose key words are not in the documents
+  ("kéo dài", "giao nhầm kiểu", "nhiều ngăn", "bị vỡ", "220V" ...), i.e. vocabulary mismatch; no synonym list was grown from them.
 - fresh F02 "Ghế Aero X7 có đặc điểm gì?": "đặc điểm" is a request frame, not content (a real general gap).
 - fresh F12/F14 "giá dưới 1 triệu", "sofa dưới 4 triệu": the CSV price column was a bare number ("Giá: 780000", no currency), so the
   comparison had nothing to compare (an ingest contract gap, not retrieval).
@@ -219,6 +221,18 @@ nothing was tuned on the holdout or on the fresh data. Holdout was opened only f
 - fresh F23 / holdout-like attribute near-misses: a relevant document is returned although the specific attribute is missing: relevance != support.
 - Why the holdout held more failures than dev: the dev set had been used to tune, and dev and holdout are written by one person; the
   gap (dev 75% vs holdout 56%) is the honest generalisation estimate, with a wide interval on 25 cases.
+
+## Phase 10 — Gemini LLM smoke (B3): NOT RUN, status NOT VERIFIED
+Needs a separate permission and the owner's key. Nothing was called. The only real-LLM evidence remains the pre-v4 smoke run
+(7 requests). All documents say "Gemini LLM: not verified after v4".
+
+## Phase 11 — regression, API shapes, documentation: PASS
+- Full suite 352 passed; `portfolio_check` all PASS; real Chrome acceptance **89/89** at 390/768/1024/1280/1366/1440/1920 px
+  (the earlier script, unchanged) + 15/15 multi-turn.
+- API shapes vs main (07a626f worktree, same requests): all 11 endpoint checks keep status codes and every old key; additions only:
+  `/api/chat` `query_trace`, `turn_context`; `/api/health` `corpus_version`, `vector_missing`.
+- Updated: README, docs/EVALUATION_REPORT (sections 6-8), docs/ARCHITECTURE, docs/DEMO_SCRIPT, CLAUDE.md (test baseline),
+  new docs/AI_ENGINEER_INTERVIEW_GUIDE_VI.md. SHA256SUMS regenerated.
 
 ## Post-evaluation fixes (v4.1; NOT measured on clean data)
 Two general defects found by the fresh data were fixed AFTER the session; fresh and holdout were NOT re-run, so their numbers above

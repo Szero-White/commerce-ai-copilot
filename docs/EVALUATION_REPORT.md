@@ -6,7 +6,7 @@ Produced by running the code in this repository on 2026-10-26 (Windows 11, Pytho
 
 | Check | Result |
 |---|---|
-| `python -m pytest -q` | **206 passed** |
+| `python -m pytest -q` | **352 passed** (206 before the v4 work; no earlier test was removed or weakened) |
 | `python -m scripts.portfolio_check` | **8/8** offline workflow checks (no longer needs `ignore_cleanup_errors`: SQLite connections are now closed) |
 | HTTP smoke test against live uvicorn, LLM off | `/`, health, chat (incl. the former leaks), campaign, triage, agent (disabled), evaluation, metrics: all as expected |
 | Browser acceptance (real Chrome, headless, driven over the DevTools protocol; server with the LLM off, synthetic data) | **89/89 checks passed** at 390, 768, 1024, 1280, 1366, 1440 and 1920 px on all 6 pages: functional flows, Vietnamese labels with raw API codes kept in tooltips and "Mã kỹ thuật" lines, a scan for leftover English UI words, overflow / clipped or overlapping labels / wrapped status chips / tap targets / menu height budget (28% of the viewport) / content width on tablets, long questions, long support messages and long audiences, all 7 CSS modules answering `200 text/css`, imported in the documented cascade order, loaded, and each module's rules in effect (computed styles), a compact typography scale (every text size is one of 11/12/13/14/15/17/21/24/30 px; icons and fluid headings are measured separately), no JavaScript exceptions, console errors or failed requests (favicon included). Screenshots were inspected by eye. A **HEAD-vs-working-tree parity journey passes 17/17**: the text of all 6 pages after the same interactions and every API response are identical to the pre-refactor `main` (whitespace-insensitive). Defects found and fixed in this pass: status chips wrapping onto two lines (768, 1280, 1366, 1440 px), a 490 px-tall phone menu (now about 226 px), a cramped tablet layout (the sidebar now collapses at 900 px), half-pixel and 10 px font sizes. Three of my own measurement mistakes were also corrected rather than ignored (an unrealistic absolute menu-height limit, a regex lost in a template string, and a CSS-import check that read relative hrefs). **Not tested:** Firefox/Safari/Edge, real touch devices, accessibility tooling, and the UI with a real LLM enabled (Gemini output was never viewed in the browser) |
@@ -71,4 +71,38 @@ Tier note: Google offers no API to verify a key's billing status; the free-tier 
 ```powershell
 .venv\Scripts\python -m pytest -q
 .venv\Scripts\python -m scripts.portfolio_check     # writes reports/offline_acceptance_report.json (git-ignored)
+.venv\Scripts\python -m scripts.quality_eval --set dev            # also: near_miss, legacy, fresh
+.venv\Scripts\python -m scripts.quality_eval --set dev --root <checkout of another commit> --label baseline
 ```
+
+## 6. v4 quality evaluation (retrieval, offline; baseline commit 07a626f vs final)
+
+**Method.** `scripts/quality_eval.py` measures four things separately: retrieval success (expected documents in the top 3), answer correctness (the extractive text contains facts taken from the documents), citation correctness (cited ids are returned ids), and unsupported answers (a source returned for a question the data cannot answer). A passing unit test is not used as a quality measure. All sets are synthetic and expectations come from `data/seed_documents.json` or the fresh files, never from system output. LLM and embeddings are off; every report records the commit, date, dataset hash and configuration.
+
+**Three sets with different roles.** *Dev* (65 + 12 near-miss): used freely to find defects and calibrate. *Holdout* (33): written before any change, its SHA-256 committed first (`data/eval_v4/HOLDOUT.sha256`), never used to tune, opened once in the final session for both commits. *Fresh* (27 + lifecycle): new products and policies written **after** the freeze (git tag `freeze-v4`), imported only through `scripts.ingest` logic, no code knows them. The legacy sets (31, 33, 18, 12) were tuned on and are shown only to prove nothing regressed.
+
+| Set | Metric | Baseline 07a626f | Final |
+|---|---|---|---|
+| Dev | Hit@3 | 26/52 | 39/52 |
+| Dev | false abstention | 25/52 | 13/52 |
+| Dev | unsupported leaks / near-miss leaks | 0/10, 1/12 | 0/10, 0/12 |
+| Legacy (contaminated) | 31 pos, 33 neg, 18 pos, 12 neg | 31/31, 32/33, 18/18, 12/12 | identical |
+| **Holdout** | Hit@3 (95% CI) | 12/25 (0.30-0.67) | **14/25 (0.37-0.73)** |
+| Holdout | false abstention | 13/25 | **11/25** |
+| Holdout | unanswerable questions answered wrongly | 2/8 | **0/8** |
+| **Fresh** | Hit@3 (95% CI) | 10/19 (0.32-0.73) | **12/19 (0.41-0.81)** |
+| Fresh | unanswerable questions answered wrongly | 3/8 | 1/8 |
+| Fresh | update / replace-source / delete / index consistency | not supported | **7/7 pass** |
+| All sets | latency p50 (15 documents, offline, not a benchmark) | ~8-10 ms | ~10-11 ms |
+
+**Acceptance verdicts against the targets written before the work.** Holdout: no-diacritics + typo + discovery questions 7/9 (78%) with false abstention 44% against targets of 80% and 20%: **FAIL**. No more wrong answers than baseline (0 vs 2) and none on near-misses: PASS. Fresh: Hit@3 63% against 80%: **FAIL**; lifecycle: PASS. Nothing was tuned on holdout or fresh.
+
+**Why it fails, from the failing cases.** (1) Need-based paraphrases with no shared words are 0/6 on the unseen sets. (2) Holdout paraphrases use words that are not in the documents ("kéo dài", "giao nhầm kiểu", "nhiều ngăn", "bị vỡ"). (3) Two typos fall outside the repair rules ("Fexl" is a rotation, "Thanh tóan ... hnagf" has an accent slip plus two edits). (4) Fresh data exposed an ingest-contract gap (a bare CSV price had no currency, so "dưới 1 triệu" could not compare it), a request frame ("đặc điểm gì") counted as a content word, and a generic-word false positive ("đổi màu sau khi mua" returned the delivery policy). (5) A missing attribute of an existing product ("màu hồng") still returns the product text. The first two defects of (4) were fixed after the session; they are **not** re-measured on clean data (see section 8).
+
+## 7. Embedding experiment on dev data (hosted, free tier): negative result
+
+`scripts/embedding_experiment.py`, run by the key owner through `run_gemini_live.ps1 -Task embedding-dev`: 151 synthetic texts (documents, their sentences, dev and near-miss questions; never the holdout), 19 requests, `gemini-embedding-001`; results are cached and were analysed offline. Findings: for 8/8 need-based dev questions the expected document ranked **first** of 15 (scores 0.66-0.76), so the embedding carries real signal; but the best score of questions the catalogue cannot answer is 0.61-0.82, overlapping the true matches, and part of that is questions about stock, offers or order data for a product that exists, which are semantically close to its document. After adding gate rules for those data classes (a general fix that also protects the lexical path) the best zero-leak, stable setting admitted 1/8 (12.5 points, below the 15-point rule written beforehand). A setting admitting 2/8 existed only because 0.708 (a near-miss) and 0.722 (a true match) could be split, a margin of 0.014 on 65 cases: not used. **Decision: hybrid stays off; similarity may only re-rank documents the gate has admitted.** This does not show embeddings are useless in general; it shows that on 15 documents and 65 questions no safe admission threshold can be calibrated.
+
+## 8. What is verified and what is not
+
+Verified here (offline, deterministic): everything in sections 1, 6 and 7 (the latter with real embeddings on dev data only); real Chrome 89/89 UI checks at 390-1920 px and 15/15 multi-turn checks; API shapes identical to main plus additive fields (`query_trace`, `turn_context`, `vector_missing`, `corpus_version`). **Not verified:** the quality of any LLM answer after the v4 changes (the only hosted run is the pre-v4 smoke test); embeddings on holdout or fresh data; Firefox/Safari/Edge, touch devices; more than 15 documents of realistic data; the two post-session fixes on clean data; any claim about production use.
