@@ -295,6 +295,18 @@ semantic sources are still always verified by the LLM. Also: when the LLM is una
 is no longer shown (it was never checked). Cached-vector check: dev +1 hit and no new unanswerable source, trial unchanged, the real question now
 returns PRD-103 marked `semantic`. Residual fragility: its sentence similarity is 0.707 against tau_span 0.70, so another phrasing of a chatty need can
 still fall short; the next step would be to embed a distilled form of the question as well (one more request per question).
+**Second need-based failure ("Tối nào cũng học khuya mà đèn trong phòng yếu quá, có gì hợp không?") and the general fix (v4.3).** Cached vectors:
+the lamp is rank 1 (z 2.8, 0.059 above the runner-up) but its document similarity is 0.643 and best sentence 0.699 < the absolute thresholds
+0.70/0.70. Root cause: ABSOLUTE cosine thresholds were calibrated on short dev questions; a chatty need scores 0.64-0.72 for the right
+document, so any fixed value is wrong for some phrasing (lowering z_min again would not help: tau is the binding rule). The reliable signal is the RANK
+(top-3 103/103 on the independent set). Change: (1) `gate.rank_candidates`: similarity only NOMINATES (stands out among all documents: z >= 1.5,
+within 0.06 of the best, max 3, every hard constraint) - no absolute threshold; (2) `verification.py`: for any meaning-found source the model must return
+JSON with the exact supporting sentence; CODE checks the quote occurs in the document, every number in the answer occurs in the quote, the answer
+passes the evidence guard, and the citation is appended by the code; decline / unreadable / invented quote = "not enough information", no source; the answer
+shows «quote» as visible evidence. Cached-vector measurement of nomination: dev 11/12 and trial 38/39 answerable questions the lexical path missed now
+get the right document nominated (was 3 and 19); the price is that about half of the unanswerable questions (8/19 dev, 8/16 trial) now reach the LLM, which
+must decline them, so correctness of the verification matters more than before. Offline tests use a fake LLM (quote forgery, paraphrase, foreign number, pasted
+id, unreadable reply, rephrased/long/new-product questions). NOT re-run with real Gemini yet: `run_gemini_live.ps1 -Task online-check` before trusting it.
 **What is NOT fixable lexically, and what is missing to verify semantic retrieval:** 25/25 `synonym_need` still 0 (plus most remaining policy paraphrases:
 "nộp", "đổi ý", "thanh toán sau lúc giao"): the question shares no words with the document. B1 (dev, 151 texts) showed the right
 document ranks first but absolute similarity cannot separate it from unanswerable questions. Missing: (1) an embedding run on THIS trial

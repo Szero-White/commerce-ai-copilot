@@ -1,17 +1,22 @@
-"""Meaning-based candidates + LLM verification. Fake embeddings and a fake LLM: they test the WIRING and the safety logic.
+"""Meaning-based nomination + verified answers. Fake embeddings and a fake LLM: they test the WIRING and the safety logic.
 
 Nothing here says anything about Gemini; the real check is `scripts.blind_eval --online` run by the key owner.
 """
+import json
+
 import pytest
 
 from app import retrieval, services
 from app.config import Settings
+from app.ollama import ModelUnavailable
 from app.storage import Store
 
 TOPICS = ["amber", "birch", "cedar", "dune", "ember", "fjord"]
 
 
 def fake_embed(settings, texts):
+    """Documents/sentences point at their topic word; a question points at a topic through a cue ("amberish"), whatever
+    its wording or length. This stands in for 'the same need, phrased differently'."""
     out = []
     for text in texts:
         low = text.lower()
@@ -19,10 +24,8 @@ def fake_embed(settings, texts):
         for i, t in enumerate(TOPICS):
             if t in low:
                 v[i] = 1.0 if "item" in low else 0.9
-        if "amberish" in low:
-            v[0], v[6] = 0.9, 0.1
-        if "cedarish" in low:
-            v[2], v[7] = 0.5, 0.8              # only vaguely close: must stay below the thresholds
+            if t + "ish" in low:
+                v[i], v[6] = 0.6, 0.15        # lower, noisier similarity than a document: no absolute threshold may depend on it
         if not any(v):
             v[7] = 1.0
         out.append(v)
@@ -44,13 +47,13 @@ def store(tmp_path, monkeypatch):
     return s
 
 
-def ask(store, tmp_path, question, llm="ollama", reply=None, monkeypatch=None, seen=None):
-    def chat(settings, system, user, json_output=False):
-        if seen is not None:
-            seen.append(user)
-        return reply or "Item amber is described here [E-amber]", 10, 5
-    services.ollama_chat = chat
-    return services.question_answer(store, settings(tmp_path, llm=llm), question)
+QUOTE = "Item amber is described here in one plain sentence about amber."
+
+
+def verdict(**kw):
+    base = {"decision": "answer", "kind": "recommendation", "source_id": "E-amber", "quote": QUOTE,
+            "answer": "Item amber được mô tả ngay trong tài liệu"}
+    return json.dumps({**base, **kw}, ensure_ascii=False)
 
 
 @pytest.fixture(autouse=True)
@@ -58,6 +61,17 @@ def restore_chat():
     original = services.ollama_chat
     yield
     services.ollama_chat = original
+
+
+def ask(store, tmp_path, question, reply, seen=None, llm="ollama"):
+    def chat(settings, system, user, json_output=False):
+        if seen is not None:
+            seen.append((user, json_output))
+        if isinstance(reply, Exception):
+            raise reply
+        return reply, 10, 5
+    services.ollama_chat = chat
+    return services.question_answer(store, settings(tmp_path, llm=llm), question)
 
 
 def test_sentences_are_stored_per_document_and_follow_updates_and_deletes(store, tmp_path):
@@ -71,53 +85,72 @@ def test_sentences_are_stored_per_document_and_follow_updates_and_deletes(store,
     assert retrieval.index_vectors(store, settings(tmp_path))["spans_indexed"] == 0 and store.consistency_report()["ok"]
 
 
-def test_a_meaning_match_is_added_only_when_an_llm_will_verify_it(store, tmp_path):
-    q = "qqq wxyz amberish need"
-    found, mode = retrieval.search(store, settings(tmp_path), q)
+# ---- nomination ----------------------------------------------------------------------------------------------------
+@pytest.mark.parametrize("question", [
+    "qqq wxyz amberish need",
+    "Tôi đang tìm một thứ gì đó, nói dài dòng cho vui, rồi mới nhắc tới amberish thôi, bạn có gợi ý nào không?",
+    "amberish",
+])
+def test_the_same_need_in_other_words_nominates_the_same_document(store, tmp_path, question):
+    found, mode = retrieval.search(store, settings(tmp_path), question)
     assert [d["id"] for d in found] == ["E-amber"] and found[0]["evidence_basis"] == "semantic" and mode == "hybrid"
-    assert "tìm theo ngữ nghĩa" not in found[0]["content"]
-    assert retrieval.search(store, settings(tmp_path, llm="off"), q)[0] == []             # no verifier: channel closed
+
+
+def test_nomination_needs_an_llm_to_verify_and_stays_closed_otherwise(store, tmp_path):
+    q = "qqq wxyz amberish need"
+    assert retrieval.search(store, settings(tmp_path, llm="off"), q)[0] == []
     assert retrieval.search(store, settings(tmp_path, embedding="off"), q)[0] == []
 
 
-def test_the_llm_is_told_to_state_only_what_the_documents_say_and_its_answer_is_checked(store, tmp_path):
-    seen = []
-    result = ask(store, tmp_path, "qqq wxyz amberish need", seen=seen)
-    assert result["mode"] == "llm_rag_cited" and [s["id"] for s in result["sources"]] == ["E-amber"]
-    assert "NGỮ NGHĨA" in seen[0] and "chưa có đủ thông tin" in seen[0] and "tìm theo ngữ nghĩa" in seen[0]
-    seen.clear()
-    ask(store, tmp_path, "Item birch is described here", seen=seen)                      # a lexical hit: no verification text
-    assert seen and "NGỮ NGHĨA" not in seen[0]
+def test_a_new_product_is_found_by_meaning_after_it_is_added_and_indexed(store, tmp_path):
+    q = "xx fjordish yy"
+    assert [d["id"] for d in retrieval.search(store, settings(tmp_path), q)[0]] == ["E-fjord"]
+    store.delete("E-fjord")                                                              # withdrawn: no stale nomination
+    assert retrieval.search(store, settings(tmp_path), q)[0] == []
+    store.apply([{"id": "E-new", "title": "Item fjord", "category": "product",
+                  "content": "Item fjord is a brand new product described here, about fjord."}], source="new")
+    assert retrieval.search(store, settings(tmp_path), q)[0] == []                        # not indexed yet: no vectors, no guess
+    assert retrieval.index_vectors(store, settings(tmp_path))["indexed"] == 1
+    assert [d["id"] for d in retrieval.search(store, settings(tmp_path), q)[0]] == ["E-new"]
 
 
-def test_when_the_llm_finds_the_documents_insufficient_nothing_is_claimed_and_no_source_is_shown(store, tmp_path):
-    result = ask(store, tmp_path, "qqq wxyz amberish need", reply="Tôi chưa có đủ thông tin trong tài liệu để xác nhận")
-    assert result["mode"] == "llm_insufficient_evidence" and result["sources"] == []
-    assert "chưa có đủ thông tin" in result["answer"] and result["citation_ids_checked"] is True
-
-
-def test_a_meaning_only_source_is_never_shown_when_the_llm_could_not_verify_it(store, tmp_path):
-    from app.ollama import ModelUnavailable
-
-    def down(settings, system, user, json_output=False):
-        raise ModelUnavailable("offline")
-    services.ollama_chat = down
-    result = services.question_answer(store, settings(tmp_path), "qqq wxyz amberish need")
-    assert result["mode"] == "llm_unavailable_extractive" and result["sources"] == []
-    assert "chưa có đủ thông tin" in result["answer"]
-    # a document the gate admitted BY WORDS is still shown for the user to read
-    lexical = services.question_answer(store, settings(tmp_path), "Item birch is described here")
-    assert lexical["mode"] == "llm_unavailable_extractive" and [s["id"] for s in lexical["sources"]] == ["E-birch"]
-    # an answer that fails the citation check does not smuggle the meaning-only source in either
-    services.ollama_chat = lambda *a, **k: ("Item amber is described here [E-nope]", 1, 1)
-    rejected = services.question_answer(store, settings(tmp_path), "qqq wxyz amberish need")
-    assert rejected["mode"] == "llm_citation_rejected_extractive" and rejected["sources"] == []
-
-
-def test_hard_constraints_still_veto_a_meaning_match(store, tmp_path):
+def test_hard_constraints_still_veto_a_nominated_document(store, tmp_path):
     for question in ("Zephyr Pro qqq amberish need", "qqq amberish need giảm 5%", "qqq amberish còn hàng không"):
         assert retrieval.search(store, settings(tmp_path), question)[0] == [], question
 
 
-def test_a_vaguely_similar_question_stays_below_the_thresholds(store, tmp_path):
-    assert retrieval.search(store, settings(tmp_path), "qqq wxyz cedarish need")[0] == []
+# ---- verified answers ----------------------------------------------------------------------------------------------
+def test_a_verified_answer_shows_its_evidence_and_only_that_source(store, tmp_path):
+    seen = []
+    result = ask(store, tmp_path, "qqq wxyz amberish need", verdict(), seen=seen)
+    assert result["mode"] == "llm_rag_cited" and [s["id"] for s in result["sources"]] == ["E-amber"]
+    assert "[E-amber]" in result["answer"] and f"«{QUOTE}»" in result["answer"]
+    user, json_output = seen[0]
+    assert json_output is True and "NGUYÊN VĂN" in user and "tìm theo ngữ nghĩa" in user
+
+
+def test_the_answer_is_refused_when_the_evidence_does_not_check_out(store, tmp_path):
+    q = "qqq wxyz amberish need"
+    for reply in (verdict(decision="decline"),                                         # the model found nothing
+                  verdict(quote="Item amber has a lifetime warranty on everything."),   # invented evidence
+                  verdict(quote="Item amber is described plainly."),                    # a paraphrase, not a quote
+                  verdict(answer="Giá chỉ 1 VND"),                                      # a number the quote lacks
+                  verdict(source_id="E-nope"),                                          # not one of the documents
+                  "Dạ có ạ, sản phẩm này có bảo hành trọn đời [E-amber]",               # prose with an id pasted on
+                  ""):
+        result = ask(store, tmp_path, q, reply)
+        assert result["mode"] == "llm_insufficient_evidence" and result["sources"] == [], reply
+        assert "chưa có đủ thông tin" in result["answer"]
+
+
+def test_a_lexical_answer_keeps_the_old_citation_path(store, tmp_path):
+    seen = []
+    result = ask(store, tmp_path, "Item birch is described here", "Item birch được mô tả [E-birch]", seen=seen)
+    assert result["mode"] == "llm_rag_cited" and seen and seen[0][1] is False and "NGUYÊN VĂN" not in seen[0][0]
+
+
+def test_a_nominated_source_is_never_shown_when_the_llm_is_down(store, tmp_path):
+    result = ask(store, tmp_path, "qqq wxyz amberish need", ModelUnavailable("offline"))
+    assert result["mode"] == "llm_unavailable_extractive" and result["sources"] == []
+    lexical = ask(store, tmp_path, "Item birch is described here", ModelUnavailable("offline"))
+    assert [s["id"] for s in lexical["sources"]] == ["E-birch"]             # words-admitted documents may still be read

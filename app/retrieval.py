@@ -50,13 +50,13 @@ def _valid_vector(row, settings, size):
 
 
 def semantic_candidates(store, settings, query, query_vector, admitted):
-    """Documents a meaning-based match may add, each with the sentence that matched. The gate has the last word.
+    """Documents a meaning-based match NOMINATES, each with its best matching sentence (a hint, may be empty).
 
     Only used when an LLM will check the answer (see `search`): similarity says a document is RELEVANT, not that it states
-    what was asked. Requires document AND sentence vectors, thresholds fixed on dev (`SemanticParams`), and every hard
-    constraint of `gate.check_document`.
+    what was asked. Nomination is by rank among all documents (`gate.rank_candidates`, no absolute threshold) and every hard
+    constraint of `gate.check_document` still applies; `verification.py` decides whether anything may be claimed.
     """
-    from .gate import admit_semantic, check_document
+    from .gate import check_document, rank_candidates
     from .query import normalize
     analysis = store.analyze(query)
     if analysis.needs_referent:
@@ -82,12 +82,11 @@ def semantic_candidates(store, settings, query, query_vector, admitted):
         verdicts[doc_id] = check_document(analysis, text, normalize(text).split(), d["category"])
         return verdicts[doc_id].admitted
 
-    single = not (analysis.discovery or analysis.catalog or analysis.conditions)
     found = []
-    for doc_id, sentence in admit_semantic(scores, best_span, single, passes):
+    for doc_id in rank_candidates(scores, passes):
         if doc_id not in admitted:
             cond = verdicts[doc_id].condition
-            found.append(({**docs[doc_id], **({"condition_status": cond} if cond else {})}, sentence))
+            found.append(({**docs[doc_id], **({"condition_status": cond} if cond else {})}, best_span.get(doc_id, (0, ""))[1]))
     return found
 
 

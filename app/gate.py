@@ -71,8 +71,45 @@ class SemanticParams:
     max_list: int = 5
 
 
+@dataclass(frozen=True)
+class CandidateParams:
+    """Candidate generation by RANK. Fixed since the B1 diagnosis (reports/PHASE_LOG.md); not tuned on any benchmark.
+
+    Absolute cosine values depend on the style and length of the question (a chatty need scored 0.64-0.72 for the right
+    document, a short lookup 0.75+), so no absolute threshold generalises. What does generalise is the RANK: the right
+    document was in the top 3 for 103/103 independent questions. So similarity only nominates; the hard constraints and
+    the verified answer (verification.py) decide whether anything is claimed.
+    """
+    z_min: float = 1.5           # robust z-score of the document among all documents: rejects only a flat profile
+    min_spread: float = 0.02
+    delta: float = 0.06          # a runner-up is nominated only if it is this close to the best
+    max_candidates: int = 3
+
+
+def rank_candidates(scores: dict, passes, params: CandidateParams = CandidateParams()):
+    """Documents that stand out among all documents for the question, best first, each passing the hard constraints."""
+    if len(scores) < 3:
+        return []
+    values = list(scores.values())
+    centre = statistics.median(values)
+    spread = max(1.4826 * statistics.median(abs(v - centre) for v in values), params.min_spread)
+    ranked = sorted(scores, key=scores.get, reverse=True)
+    eligible = [d for d in ranked[:params.max_candidates * 3] if passes(d)]
+    if not eligible:
+        return []
+    best, found = scores[eligible[0]], []
+    for doc_id in eligible:
+        if (scores[doc_id] - centre) / spread < params.z_min or scores[doc_id] < best - params.delta:
+            break
+        found.append(doc_id)
+        if len(found) >= params.max_candidates:
+            break
+    return found
+
+
 def admit_semantic(scores: dict, spans: dict, single_answer: bool, passes, params: SemanticParams = SemanticParams()):
-    """Document ids admitted by meaning alone, each with the sentence that is shown as the evidence.
+    """LEGACY absolute-threshold rule, kept only so the B1 / external experiments stay reproducible (the application now
+    uses `rank_candidates`). Document ids admitted by meaning alone, each with the sentence that is shown as the evidence.
 
     scores: {doc_id: similarity of the whole document}; spans: {doc_id: (similarity, sentence)} of its best sentence.
     passes: callable(doc_id) -> bool applying `check_document`. Nothing is admitted without a matching sentence, so

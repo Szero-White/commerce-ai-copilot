@@ -3,7 +3,7 @@ import json
 import re
 import time
 from .retrieval import search
-from .storage import normalize
+from . import verification
 # Provider-agnostic despite the historical name (ollama or gemini); tests patch this attribute.
 from .llm import chat as ollama_chat, llm_enabled, llm_info, ModelUnavailable
 from .evidence import valid_cited_answer, safe_marketing_copy, safe_audience, context_window
@@ -28,7 +28,9 @@ def _context_from_sources(sources, max_chars):
     blocks = []
     remaining = max_chars
     for source in sources:
-        by_meaning = " (tìm theo ngữ nghĩa: chỉ dùng nếu tài liệu NÊU RÕ điều được hỏi)" if source.get("evidence_basis") == "semantic" else ""
+        by_meaning = (" (tìm theo ngữ nghĩa: chỉ dùng nếu tài liệu NÊU RÕ điều được hỏi"
+                      + (f"; câu gần nghĩa nhất: «{source['evidence_span']}»" if source.get("evidence_span") else "") + ")"
+                      ) if source.get("evidence_basis") == "semantic" else ""
         header = f"[{source['id']}] {source['title']}{_CONDITION_NOTE.get(source.get('condition_status'), '')}{by_meaning}: "
         if remaining <= len(header) + 40:
             break
@@ -129,26 +131,32 @@ def question_answer(store, settings, question, turn_context=None):
             try:
                 about = f" (nói về tài liệu [{bound['id']}] của lượt trước)" if bound else ""
                 by_meaning = any(s.get("evidence_basis") == "semantic" for s in included_sources)
-                verify = ("\nMột số tài liệu được tìm theo NGỮ NGHĨA, nghĩa là liên quan chứ chưa chắc nêu điều được hỏi. Chỉ khẳng định "
-                          "điều tài liệu NÊU RÕ. Nếu tài liệu không nêu rõ điều được hỏi (một thuộc tính, chính sách hoặc con số), "
-                          "trả lời đúng câu: 'Tôi chưa có đủ thông tin trong tài liệu để xác nhận'.") if by_meaning else ""
-                candidate, tokens_in, tokens_out = ollama_chat(settings, SYSTEM,
-                    f"TÀI LIỆU THAM KHẢO:\n{context}\n\nCÂU HỎI: {question}{about}\n\n"
-                    f"Chỉ được trích mã nguồn trong tài liệu dưới dạng [ID]. Nếu không chắc chắn, nói không đủ thông tin.{verify}")
-                model_called = True
-                evidence_checked = True
-                if by_meaning and "chua co du thong tin" in " ".join(normalize(candidate).split()):
-                    # The LLM checked and the documents do not state what was asked: relevant is not sufficient. No claim, no sources.
-                    answer = "Tôi chưa có đủ thông tin trong tài liệu để xác nhận. Vui lòng liên hệ nhân viên phụ trách."
-                    mode, sources = "llm_insufficient_evidence", []
-                # An answer with missing/fabricated source IDs is NOT presented as verified RAG.
-                elif valid_cited_answer(candidate, included_sources):
-                    answer, mode = candidate, "llm_rag_cited"
-                    sources = included_sources
+                if by_meaning:
+                    # Found by meaning = relevant, not proven to state what was asked. The model must return the supporting
+                    # sentence; the CODE checks it (verification.py). Anything unverified is a refusal with no source.
+                    reply, tokens_in, tokens_out = ollama_chat(settings, SYSTEM,
+                        f"TÀI LIỆU THAM KHẢO:\n{context}\n\nCÂU HỎI: {question}{about}\n\n{verification.INSTRUCTIONS}", json_output=True)
+                    model_called = evidence_checked = True
+                    ok, _, text, source, quote = verification.verify(reply, included_sources)
+                    if ok:
+                        answer, mode, sources = f"{text}\nCăn cứ trong tài liệu: «{quote}»", "llm_rag_cited", [source]
+                    else:
+                        answer = "Tôi chưa có đủ thông tin trong tài liệu để xác nhận. Vui lòng liên hệ nhân viên phụ trách."
+                        mode, sources = "llm_insufficient_evidence", []
                 else:
-                    answer, sources = _unverified_fallback(included_sources,
-                        "LLM có dẫn nguồn không hợp lệ hoặc số liệu chưa được nguồn hỗ trợ. Hiển thị tài liệu để đối chiếu:")
-                    mode = "llm_citation_rejected_extractive"
+                    candidate, tokens_in, tokens_out = ollama_chat(settings, SYSTEM,
+                        f"TÀI LIỆU THAM KHẢO:\n{context}\n\nCÂU HỎI: {question}{about}\n\n"
+                        "Chỉ được trích mã nguồn trong tài liệu dưới dạng [ID]. Nếu không chắc chắn, nói không đủ thông tin.")
+                    model_called = True
+                    evidence_checked = True
+                    # An answer with missing/fabricated source IDs is NOT presented as verified RAG.
+                    if valid_cited_answer(candidate, included_sources):
+                        answer, mode = candidate, "llm_rag_cited"
+                        sources = included_sources
+                    else:
+                        answer, sources = _unverified_fallback(included_sources,
+                            "LLM có dẫn nguồn không hợp lệ hoặc số liệu chưa được nguồn hỗ trợ. Hiển thị tài liệu để đối chiếu:")
+                        mode = "llm_citation_rejected_extractive"
             except ModelUnavailable:
                 answer, sources = _unverified_fallback(included_sources,
                     "Không kết nối được LLM; các đoạn tài liệu để người dùng tự đối chiếu:")
