@@ -18,8 +18,9 @@ def reply(**kw):
 
 
 def test_a_supported_answer_passes_and_the_citation_is_appended_by_the_code():
-    ok, reason, text, source, quote = verify(reply(), [DOC])
-    assert ok and reason == "ok" and text.endswith("[P-1]") and source is DOC and quote == QUOTE
+    r = verify(reply(), [DOC], "Có đèn nào hợp để học ban đêm không?")
+    assert r.ok and r.reason == "ok" and "[P-1]" in r.text and r.source is DOC and r.quote == QUOTE
+    assert verify(reply(source_id=" [p-1] "), [DOC])[0] is True         # an id written with brackets or other case is the same id
 
 
 def test_the_quote_may_differ_in_case_and_diacritics_but_not_in_words():
@@ -41,6 +42,32 @@ def test_the_quote_may_differ_in_case_and_diacritics_but_not_in_words():
 def test_an_unsupported_answer_is_refused_with_a_reason(kw, reason):
     ok, why, text, *_ = verify(reply(**kw), [DOC])
     assert not ok and why == reason and text == ""
+
+
+NEED = "Tối nào cũng học khuya mà đèn trong phòng yếu quá, có gì hợp không?"
+
+
+def test_a_recommendation_may_rest_on_real_features_but_never_asserts_an_unshown_capability():
+    claim = "Đèn Lumi có ba mức sáng, ánh sáng dịu bảo vệ mắt khi học khuya"          # "dịu", "bảo vệ mắt": no evidence
+    r = verify(reply(answer=claim), [DOC], NEED)
+    assert r.ok and r.reason == "recommendation reduced to the quoted evidence"
+    assert "bảo vệ mắt" not in r.text and f"«{QUOTE}»" in r.text and "[P-1]" in r.text
+    assert "diu" in r.info["unsupported_words"]          # reported accent-folded
+    # the same sentence presented as a FACT is refused, whatever label the model chose for a recommendation
+    refused = verify(reply(answer=claim, kind="fact"), [DOC], NEED)
+    assert not refused.ok and refused.reason == "the answer states something the quoted sentence does not"
+
+
+def test_an_answer_that_only_uses_the_quote_and_the_customers_own_words_is_shown_as_written():
+    r = verify(reply(answer="Đèn Lumi có ba mức sáng nên bạn có thể dùng mức sáng hợp để học khuya"), [DOC], NEED)
+    assert r.ok and r.reason == "ok" and r.text.startswith("Đèn Lumi có ba mức sáng nên")
+
+
+def test_the_diagnostics_say_why_without_carrying_secrets():
+    r = verify(reply(quote="Một câu bịa hoàn toàn khác."), [DOC], NEED)
+    assert not r.ok and r.info["reason"] == "the quoted sentence is not in the document"
+    assert r.info["decision"] == "answer" and r.info["source_id"] == "P-1" and "Một câu bịa" in r.info["quote"]
+    assert len(r.info["reply_excerpt"]) <= 400 and set(r.info) >= {"decision", "kind", "source_id", "quote", "reason", "reply_excerpt"}
 
 
 @pytest.mark.parametrize("raw", ["", "không phải json", "[1, 2]", "null", "Có ạ [P-1]"])

@@ -213,7 +213,7 @@ def evaluate(docs, cases, with_seed=False, online=False, only=None):
             record = {"id": case["id"], "group": case["group"], "question": case["question"], "type": case["type"],
                       "mode": response["mode"], "returned": base["found"], "answer": response["answer"], "flags": flags,
                       "found_by_meaning": [s["id"] for s in response["sources"] if s.get("evidence_basis") == "semantic"],
-                      "retrieval_mode": response["retrieval_mode"],
+                      "retrieval_mode": response["retrieval_mode"], "verification": response.get("verification"),
                       "outcome": outcome, "needs_human_review": case.get("tag") == "llm_rubric"}
             if case["type"] == "hit":
                 record["source_found"] = base["retrieval_hit"]

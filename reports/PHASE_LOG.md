@@ -307,6 +307,15 @@ shows «quote» as visible evidence. Cached-vector measurement of nomination: de
 get the right document nominated (was 3 and 19); the price is that about half of the unanswerable questions (8/19 dev, 8/16 trial) now reach the LLM, which
 must decline them, so correctness of the verification matters more than before. Offline tests use a fake LLM (quote forgery, paraphrase, foreign number, pasted
 id, unreadable reply, rephrased/long/new-product questions). NOT re-run with real Gemini yet: `run_gemini_live.ps1 -Task online-check` before trusting it.
+**Live result after v4.3: `llm_insufficient_evidence`, 0 sources for the lamp question (566 tokens in, 121 out). Cause NOT yet determined.**
+Facts: the retrieval nominated PRD-103 (cache check); 121 output tokens is far more than a decline (~20), so the model most likely produced a full verdict that the
+verifier refused; the verifier discarded the reason, and the model reply is not stored anywhere, so the true cause cannot be read from existing data.
+Offline probe with realistic replies against the real PRD-103 text found two PROVEN verifier defects (independent of what Gemini actually said):
+(1) an id written "[PRD-103]" was refused ("source id is not one of the documents"); (2) a recommendation asserting an unshown capability ("ánh sáng dịu bảo vệ mắt")
+PASSED. Fixes: ids are normalised (brackets/case/space); every content word of the answer must come from the quoted sentence, the customer's own words or a small
+connective list, otherwise a recommendation is reduced to a code-written sentence stating only the quote, and a fact answer is refused. NEW diagnostics:
+`/api/chat` returns `verification` {decision, kind, source_id, quote, reason, reply_excerpt, unsupported_words} (no key, no prompt; null for answers not found by meaning),
+and `blind_eval` records it. Next step for the owner: ask the lamp question again and read `verification.reason` / `reply_excerpt`; do not tune anything before that.
 **What is NOT fixable lexically, and what is missing to verify semantic retrieval:** 25/25 `synonym_need` still 0 (plus most remaining policy paraphrases:
 "nộp", "đổi ý", "thanh toán sau lúc giao"): the question shares no words with the document. B1 (dev, 151 texts) showed the right
 document ranks first but absolute similarity cannot separate it from unanswerable questions. Missing: (1) an embedding run on THIS trial

@@ -129,6 +129,14 @@ def test_a_verified_answer_shows_its_evidence_and_only_that_source(store, tmp_pa
     assert json_output is True and "NGUYÊN VĂN" in user and "tìm theo ngữ nghĩa" in user
 
 
+def test_the_response_carries_the_verifier_diagnostics_for_meaning_found_answers_only(store, tmp_path):
+    verified = ask(store, tmp_path, "qqq wxyz amberish need", verdict())
+    assert verified["verification"]["reason"] in ("ok", "recommendation reduced to the quoted evidence")
+    refused = ask(store, tmp_path, "qqq wxyz amberish need", verdict(quote="invented sentence nobody wrote"))
+    assert refused["mode"] == "llm_insufficient_evidence" and refused["verification"]["reason"] == "the quoted sentence is not in the document"
+    assert ask(store, tmp_path, "Item birch is described here", "Item birch được mô tả [E-birch]")["verification"] is None
+
+
 def test_the_answer_is_refused_when_the_evidence_does_not_check_out(store, tmp_path):
     q = "qqq wxyz amberish need"
     for reply in (verdict(decision="decline"),                                         # the model found nothing

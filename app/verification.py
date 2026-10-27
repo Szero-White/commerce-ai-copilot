@@ -15,6 +15,7 @@ the cheap failures (invented evidence, ids pasted onto anything, numbers from no
 """
 import json
 import re
+from typing import NamedTuple
 
 from .evidence import valid_cited_answer
 from .storage import normalize
@@ -52,24 +53,66 @@ def parse(reply: str) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-def verify(reply: str, sources: list[dict]):
-    """(ok, reason, answer_text, source, quote). answer_text already ends with the citation the CODE appended."""
+# Connective words an answer may use without them being a claim (accent-folded). Anything else in the answer must come from
+# the quoted sentence or from the customer's own question, otherwise it is a capability nobody showed evidence for.
+GLUE = set("""nen the phu hop de khi cho va la co duoc nhu cung thi ma nay do kia rat hon nhat them san pham mon cai thu minh khach
+phai can muon dung dang se van chi cac nhung mot nhieu it hay hoac neu vi nen boi tai tu den voi trong ngoai tren duoi sau truoc
+that this for and the with can you your is are to of a an in on at it be goi loai nhu cau thich ung tot nhe giup""".split())
+
+
+class Result(NamedTuple):
+    ok: bool
+    reason: str
+    text: str             # what may be shown; the citation is appended by the code, never taken from the model
+    source: dict | None
+    quote: str
+    info: dict            # safe diagnostics: the verdict fields and why it was accepted or refused (no key, no prompt)
+
+
+def _unsupported(answer: str, quote: str, question: str) -> list[str]:
+    from .query import STOP
+    allowed = set(_fold(quote).split()) | set(_fold(question).split()) | STOP | GLUE
+    return sorted({w for w in _fold(answer).split() if len(w) >= 3 and not w.isdigit() and w not in allowed})
+
+
+def verify(reply: str, sources: list[dict], question: str = "") -> Result:
+    """Check a model reply about meaning-found documents. See the module docstring for what is and is not proven."""
     verdict = parse(reply)
+    info = {"reply_excerpt": (reply or "")[:400]}
+
+    def refuse(reason, source=None, quote=""):
+        info["reason"] = reason
+        return Result(False, reason, "", source, quote, info)
     if not verdict:
-        return False, "unreadable reply", "", None, ""
+        return refuse("unreadable reply")
+    wanted = re.sub(r"[\[\]\s]", "", str(verdict.get("source_id") or "")).lower()     # "[PRD-103]" and "prd-103 " are the same id
+    info.update(decision=verdict.get("decision"), kind=verdict.get("kind"), source_id=verdict.get("source_id"),
+                quote=str(verdict.get("quote") or "")[:200])
     if verdict.get("decision") != "answer":
-        return False, "declined", "", None, ""
-    source = next((s for s in sources if s["id"] == verdict.get("source_id")), None)
+        return refuse("declined")
+    source = next((s for s in sources if s["id"].lower() == wanted), None)
     quote, answer = str(verdict.get("quote") or "").strip(), str(verdict.get("answer") or "").strip()
     if not source:
-        return False, "source id is not one of the documents", "", None, ""
+        return refuse("source id is not one of the documents")
     if len(quote) < MIN_QUOTE_CHARS or _fold(quote) not in _fold(source["title"] + " " + source["content"]):
-        return False, "the quoted sentence is not in the document", "", source, quote
+        return refuse("the quoted sentence is not in the document", source, quote)
     if not answer or len(answer) > MAX_ANSWER_CHARS:
-        return False, "no usable answer", "", source, quote
+        return refuse("no usable answer", source, quote)
     if _numbers(answer) - _numbers(quote):
-        return False, "a number in the answer is not in the quoted sentence", "", source, quote
+        return refuse("a number in the answer is not in the quoted sentence", source, quote)
     text = f"{answer} [{source['id']}]"
     if not valid_cited_answer(text, [source]):
-        return False, "the answer fails the evidence check", "", source, quote
-    return True, "ok", text, source, quote
+        return refuse("the answer fails the evidence check", source, quote)
+    extra = _unsupported(answer, quote, question)
+    if extra:
+        info["unsupported_words"] = extra[:12]
+        if verdict.get("kind") != "recommendation":
+            return refuse("the answer states something the quoted sentence does not", source, quote)
+        # A suggestion may rest on the product's real features but must not assert capabilities nobody showed: the model's
+        # own sentence is dropped and the CODE states only what the document says.
+        info["reason"] = "recommendation reduced to the quoted evidence"
+        shown = (f"Gợi ý theo nhu cầu bạn mô tả: «{source['title']}». Tài liệu nêu: «{quote}» [{source['id']}]. "
+                 "Ngoài trích dẫn này, tài liệu không xác nhận thêm khả năng nào.")
+        return Result(True, info["reason"], shown, source, quote, info)
+    info["reason"] = "ok"
+    return Result(True, "ok", f"{text}\nCăn cứ trong tài liệu: «{quote}»", source, quote, info)

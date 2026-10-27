@@ -119,6 +119,7 @@ def question_answer(store, settings, question, turn_context=None):
     tokens_in = tokens_out = 0
     model_called = False
     evidence_checked = False
+    verification_info = None
     if not sources:
         answer = "Tôi chưa có đủ thông tin trong tài liệu để xác nhận. Vui lòng liên hệ nhân viên phụ trách."
         mode = "no_evidence"
@@ -137,9 +138,10 @@ def question_answer(store, settings, question, turn_context=None):
                     reply, tokens_in, tokens_out = ollama_chat(settings, SYSTEM,
                         f"TÀI LIỆU THAM KHẢO:\n{context}\n\nCÂU HỎI: {question}{about}\n\n{verification.INSTRUCTIONS}", json_output=True)
                     model_called = evidence_checked = True
-                    ok, _, text, source, quote = verification.verify(reply, included_sources)
-                    if ok:
-                        answer, mode, sources = f"{text}\nCăn cứ trong tài liệu: «{quote}»", "llm_rag_cited", [source]
+                    checked = verification.verify(reply, included_sources, question)
+                    verification_info = checked.info          # why it was accepted or refused; returned for diagnosis
+                    if checked.ok:
+                        answer, mode, sources = checked.text, "llm_rag_cited", [checked.source]
                     else:
                         answer = "Tôi chưa có đủ thông tin trong tài liệu để xác nhận. Vui lòng liên hệ nhân viên phụ trách."
                         mode, sources = "llm_insufficient_evidence", []
@@ -175,6 +177,7 @@ def question_answer(store, settings, question, turn_context=None):
     return {"answer":answer,"mode":mode,"retrieval_mode":search_mode,"sources":sources,
             "latency_ms":ms,"tokens_in":tokens_in,"tokens_out":tokens_out,
             "query_trace":query_trace,
+            "verification":verification_info,
             "citation_ids_checked":evidence_checked,
             "context_window":context_window(settings,tokens_in) if model_called else None,
             "llm":llm_info(settings) if model_called else None,
