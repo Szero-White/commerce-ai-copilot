@@ -2,11 +2,11 @@
   "schema": 1,
   "label": "baseline",
   "set": "fresh",
-  "date_utc": "2026-10-27T02:48:46Z",
+  "date_utc": "2026-10-27T02:49:01Z",
   "code_root": "C:\\Users\\ASUS\\AppData\\Local\\Temp\\base_07a626f",
   "code_commit": "07a626f9987c1cb0d8b30e60faf90dee0d3c23c1",
   "code_dirty": false,
-  "harness_commit": "5a8d841b2a22ed37e94fdfb59372bc4ea7931e06",
+  "harness_commit": "69386c55379fbaa00c16ad034c63f5020caa82f1",
   "config": {
     "llm": "off",
     "embedding": "off",
@@ -85,8 +85,8 @@
       ]
     },
     "latency_ms": {
-      "p50": 9.26,
-      "p95": 10.9
+      "p50": 10.0,
+      "p95": 11.56
     },
     "by_group": {
       "lookup": {

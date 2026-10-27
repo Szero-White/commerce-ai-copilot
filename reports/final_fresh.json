@@ -2,11 +2,11 @@
   "schema": 1,
   "label": "final",
   "set": "fresh",
-  "date_utc": "2026-10-27T02:48:47Z",
+  "date_utc": "2026-10-27T02:49:02Z",
   "code_root": "D:\\Commerce_AI_Copilot_v2_1",
-  "code_commit": "5a8d841b2a22ed37e94fdfb59372bc4ea7931e06",
+  "code_commit": "69386c55379fbaa00c16ad034c63f5020caa82f1",
   "code_dirty": true,
-  "harness_commit": "5a8d841b2a22ed37e94fdfb59372bc4ea7931e06",
+  "harness_commit": "69386c55379fbaa00c16ad034c63f5020caa82f1",
   "config": {
     "llm": "off",
     "embedding": "off",
@@ -21,12 +21,12 @@
       "update: the new price is served": true,
       "update: the old price is not served": true,
       "update: the old price matches nothing": true,
-      "removed product: not returned": false,
-      "removed product: not in documents": false,
-      "deleted policy: not returned": false,
+      "removed product: not returned": true,
+      "removed product: not in documents": true,
+      "deleted policy: not returned": true,
       "indexes are consistent after update and delete": true
     },
-    "all_passed": false
+    "all_passed": true
   },
   "summary": {
     "cases": 27,
@@ -94,8 +94,8 @@
       ]
     },
     "latency_ms": {
-      "p50": 9.9,
-      "p95": 25.18
+      "p50": 11.39,
+      "p95": 24.79
     },
     "by_group": {
       "lookup": {
