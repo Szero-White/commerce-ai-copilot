@@ -52,3 +52,25 @@ Editing note: append with the Edit tool (UTF-8); PowerShell `Add-Content` mangle
   Remaining dev failures are synonym_need 0/8 (needs meaning, not words), numeric_condition 0/4 (Phase 5), a few paraphrases
   ("chế độ sáng", "nâng lên hạ xuống") and "áo hoodie". Not solved on purpose: no synonym list was grown from the failures.
 - Caveat: dev and holdout were written by the same author; the holdout was not run. Full suite: 235 passed.
+
+## Phase 4 — dynamic ingestion and consistency: PASS
+- `Store`: new nullable `documents.source` column and `meta` table (both added by the existing ALTER/CREATE-IF-NOT-EXISTS
+  migration; verified on the real `runtime/lab.db`, `scripts.check_index` -> ok). `apply()` imports a batch in ONE transaction
+  (`replace=True` also drops documents of that source missing from the batch), `delete()`, `delete_source()`, `corpus_version()`
+  (bumped in the same transaction as every change, stored in the DB so another process' import is seen by a running server),
+  `consistency_report()` (missing / duplicate / stale / orphan text-index rows, unreadable or wrong-model or mixed-size
+  vectors, legacy path-hash ids). `_init` now compares document ids with text-index ids (a count could not see one missing
+  plus one orphan row). Vocabulary and token lists are cached per `corpus_version`.
+- `_upsert`: identical text -> nothing changes and the vector stays valid (and a drifted index row is repaired); changed text
+  -> vector removed with the row update, so a vector of old text can never be used for new text.
+- `scripts/ingest.py`: ids from source name + SKU (or chunk number), not from the absolute path; source defaults to the file
+  name; validation (headers, duplicate SKU, empty rows, UTF-8, size) happens before any write; flags `--source`,
+  `--replace-source`, `--delete`, `--delete-source`, `--check`. `scripts/check_index.py` exits 1 on problems.
+  `/api/health` gained `vector_missing` and `corpus_version` (additive).
+- Where old data can still live and how it is covered: documents, text index, vectors (same row), embedding cache (keyed by
+  sha256(model+text), cannot serve changed text), seed JSON (only loaded into an EMPTY database: editing it does not update an
+  existing DB; use ingest), orphan chunks (`--replace-source`), moved files (path-independent ids). A pre-existing DB keeps its
+  old path-hash ids as "legacy" until re-imported (reported by the check). BM25 is current right after commit; vectors only
+  after `python -m scripts.index_embeddings` (not run here: calls an API). No `valid_until`: withdrawing = deleting.
+- Not done on purpose: `doc_spans` table (arrives with the semantic work, Phase 7, if it is approved).
+- Retrieval metrics unchanged from Phase 3 (dev Hit@3 35/52, leaks 0/10, near-miss leak 1/12, legacy identical). Full suite: 258 passed.

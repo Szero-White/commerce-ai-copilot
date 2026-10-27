@@ -54,6 +54,9 @@ def create_app(data_path=None, settings=None):
                 "embedding_provider":settings.embedding_provider,
                 "llm":llm_info(settings),
                 "vector_indexed":sum(bool(d["embedding_json"]) and d.get("embedding_model")==settings.embedding_model for d in docs),
+                # Documents added or changed since the last `scripts.index_embeddings` run are searched by BM25 only.
+                "vector_missing":(len(docs)-sum(bool(d["embedding_json"]) and d.get("embedding_model")==settings.embedding_model for d in docs)) if embedding_on else None,
+                "corpus_version":store.corpus_version(),
                 "embedding_model":settings.embedding_model if embedding_on else None,
                 "simulation":True,"public_data_only":True}
         if probe and (llm_enabled(settings) or embedding_on):

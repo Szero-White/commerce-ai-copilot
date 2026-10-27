@@ -70,6 +70,7 @@ class Store:
         self.path = Path(db_path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        self._cached = None   # (corpus_version, vocabulary and token lists), see _corpus()
         self._init()
 
     def connect(self):
@@ -91,31 +92,152 @@ class Store:
                 latency_ms INTEGER NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0,
                 output_tokens INTEGER NOT NULL DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             """)
             columns = {row[1] for row in cx.execute("PRAGMA table_info(documents)")}
             if "embedding_model" not in columns:
                 cx.execute("ALTER TABLE documents ADD COLUMN embedding_model TEXT")
+            if "source" not in columns:
+                cx.execute("ALTER TABLE documents ADD COLUMN source TEXT")
             count = cx.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
             if count == 0:
                 docs = json.loads((ROOT / "data" / "seed_documents.json").read_text(encoding="utf-8"))
                 for d in docs:
-                    self._upsert(cx, d)
-            elif cx.execute("SELECT COUNT(*) FROM document_fts").fetchone()[0] != count:
+                    self._upsert(cx, {**d, "source": "seed"})
+            elif sorted(r[0] for r in cx.execute("SELECT doc_id FROM document_fts")) != \
+                    sorted(r[0] for r in cx.execute("SELECT id FROM documents")):
+                # Compared by id, not by count: one missing and one orphan row would cancel out in a count.
                 cx.execute("DELETE FROM document_fts")
                 for d in cx.execute("SELECT * FROM documents").fetchall():
                     cx.execute("INSERT INTO document_fts(doc_id,normalized_text) VALUES(?,?)", (d["id"], normalize(d["title"] + " " + d["content"])))
+                self._bump(cx)
 
     @staticmethod
-    def _upsert(cx, d):
-        cx.execute("INSERT INTO documents(id,title,category,content,embedding_json,embedding_model) VALUES(?,?,?,?,NULL,NULL) "
-                   "ON CONFLICT(id) DO UPDATE SET title=excluded.title,category=excluded.category,content=excluded.content,embedding_json=NULL,embedding_model=NULL",
-                   (d["id"], d["title"], d["category"], d["content"]))
+    def _bump(cx):
+        """The corpus version changes inside the same transaction as any change to the documents."""
+        cx.execute("INSERT INTO meta(key,value) VALUES('corpus_version','1') "
+                   "ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1")
+
+    @staticmethod
+    def _index_fts(cx, d):
         cx.execute("DELETE FROM document_fts WHERE doc_id=?", (d["id"],))
         cx.execute("INSERT INTO document_fts(doc_id,normalized_text) VALUES(?,?)", (d["id"], normalize(d["title"] + " " + d["content"])))
 
+    @classmethod
+    def _upsert(cls, cx, d):
+        """Insert or replace one document. Returns 'added', 'updated' or 'unchanged'.
+
+        A document whose text did not change keeps its vector (still valid); a changed one loses it, so a vector
+        of the old text can never be used for the new text.
+        """
+        old = cx.execute("SELECT title,category,content,source FROM documents WHERE id=?", (d["id"],)).fetchone()
+        source = d.get("source")
+        if old and (old["title"], old["category"], old["content"]) == (d["title"], d["category"], d["content"]):
+            fts = [r[0] for r in cx.execute("SELECT normalized_text FROM document_fts WHERE doc_id=?", (d["id"],))]
+            if fts != [normalize(d["title"] + " " + d["content"])]:
+                cls._index_fts(cx, d)       # the text index drifted from the document: repair it
+                cls._bump(cx)
+            if source is not None and old["source"] != source:
+                cx.execute("UPDATE documents SET source=? WHERE id=?", (source, d["id"]))
+            return "unchanged"
+        cx.execute("INSERT INTO documents(id,title,category,content,embedding_json,embedding_model,source) VALUES(?,?,?,?,NULL,NULL,?) "
+                   "ON CONFLICT(id) DO UPDATE SET title=excluded.title,category=excluded.category,content=excluded.content,"
+                   "embedding_json=NULL,embedding_model=NULL,source=COALESCE(excluded.source,documents.source)",
+                   (d["id"], d["title"], d["category"], d["content"], source))
+        cls._index_fts(cx, d)
+        cls._bump(cx)
+        return "updated" if old else "added"
+
+    @classmethod
+    def _delete(cls, cx, doc_id):
+        gone = cx.execute("DELETE FROM documents WHERE id=?", (doc_id,)).rowcount
+        cx.execute("DELETE FROM document_fts WHERE doc_id=?", (doc_id,))
+        if gone:
+            cls._bump(cx)
+        return bool(gone)
+
     def upsert(self, doc):
         with self._lock, self.connect() as cx:
-            self._upsert(cx, doc)
+            return self._upsert(cx, doc)
+
+    def apply(self, docs, source=None, replace=False):
+        """Import a batch in ONE transaction: either every document is applied or none is.
+
+        With `replace`, documents of `source` that are absent from the batch are removed (no orphans).
+        """
+        ids = [d["id"] for d in docs]
+        if len(ids) != len(set(ids)):
+            raise ValueError("The import contains duplicate document ids")
+        if replace and not source:
+            raise ValueError("Replacing a source needs a source name")
+        summary = {"added": 0, "updated": 0, "unchanged": 0, "deleted": 0}
+        with self._lock, self.connect() as cx:
+            for d in docs:
+                summary[self._upsert(cx, {**d, "source": source or d.get("source")})] += 1
+            if replace:
+                for (doc_id,) in cx.execute("SELECT id FROM documents WHERE source=?", (source,)).fetchall():
+                    if doc_id not in set(ids):
+                        summary["deleted"] += self._delete(cx, doc_id)
+        return summary
+
+    def delete(self, doc_id):
+        """Remove a document with its text index row and vector (they live in the same row/transaction)."""
+        with self._lock, self.connect() as cx:
+            return self._delete(cx, doc_id)
+
+    def delete_source(self, source):
+        if not source:
+            raise ValueError("A source name is required")
+        with self._lock, self.connect() as cx:
+            ids = [r[0] for r in cx.execute("SELECT id FROM documents WHERE source=?", (source,))]
+            return sum(self._delete(cx, i) for i in ids)
+
+    def corpus_version(self):
+        with self.connect() as cx:
+            return self._version(cx)
+
+    @staticmethod
+    def _version(cx):
+        row = cx.execute("SELECT value FROM meta WHERE key='corpus_version'").fetchone()
+        return int(row[0]) if row else 0
+
+    def consistency_report(self, embedding_model=None):
+        """Compare the documents with the indexes derived from them. `ok` is False when anything is stale."""
+        problems = []
+        with self.connect() as cx:
+            docs = {r["id"]: dict(r) for r in cx.execute("SELECT * FROM documents")}
+            fts = {}
+            for r in cx.execute("SELECT doc_id, normalized_text FROM document_fts"):
+                fts.setdefault(r["doc_id"], []).append(r["normalized_text"])
+        for doc_id, d in docs.items():
+            rows = fts.get(doc_id, [])
+            if not rows:
+                problems.append({"id": doc_id, "problem": "missing from the text index"})
+            elif len(rows) > 1:
+                problems.append({"id": doc_id, "problem": "duplicated in the text index"})
+            elif rows[0] != normalize(d["title"] + " " + d["content"]):
+                problems.append({"id": doc_id, "problem": "text index is stale (differs from the document)"})
+        problems += [{"id": i, "problem": "text index row without a document"} for i in fts if i not in docs]
+        vectors, dims = 0, set()
+        for doc_id, d in docs.items():
+            if not d.get("embedding_json"):
+                continue
+            vectors += 1
+            try:
+                vector = json.loads(d["embedding_json"])
+                if not isinstance(vector, list) or not vector:
+                    raise ValueError
+                dims.add(len(vector))
+            except (TypeError, ValueError):
+                problems.append({"id": doc_id, "problem": "unreadable vector"})
+            if embedding_model and d.get("embedding_model") != embedding_model:
+                problems.append({"id": doc_id, "problem": f"vector built by {d.get('embedding_model')!r}, expected {embedding_model!r}"})
+        if len(dims) > 1:
+            problems.append({"id": None, "problem": f"vectors of different sizes: {sorted(dims)}"})
+        legacy = [i for i, d in docs.items() if not d.get("source") and (i.startswith("CSV-") or i.startswith("DOC-"))]
+        return {"ok": not problems, "documents": len(docs), "with_vector": vectors, "missing_vector": len(docs) - vectors,
+                "corpus_version": self.corpus_version(), "problems": problems,
+                "legacy_ids_without_source": legacy}
 
     def documents(self):
         with self.connect() as cx:
@@ -130,6 +252,23 @@ class Store:
         with self._lock, self.connect() as cx:
             cx.execute("UPDATE documents SET embedding_json=?, embedding_model=? WHERE id=?", (json.dumps(embedding), model, doc_id))
 
+    def _corpus(self):
+        """Vocabulary and token lists of the documents, rebuilt only when `corpus_version` changes.
+
+        The version is stored in the database, so a change made by another process (an ingest script) is noticed
+        by the next query of a running server without restarting it.
+        """
+        with self.connect() as cx:
+            version = self._version(cx)
+            cached = self._cached
+            if cached and cached[0] == version:
+                return cached[1]
+            rows = [(r[0], r[1]) for r in cx.execute("SELECT title,content FROM documents")]
+        texts = [t + " " + c for t, c in rows]
+        data = {"lexicon": Lexicon(texts, known=SYNONYMS), "tokens": [normalize(t).split() for t in texts]}
+        self._cached = (version, data)
+        return data
+
     def _catalogue(self, limit):
         """'Which products do you sell?': no content word to match, so list product documents."""
         with self.connect() as cx:
@@ -138,10 +277,9 @@ class Store:
 
     def fts_search(self, query, limit=12, trace=None):
         """Lexical candidates for `query`. `trace` (a dict) receives how the question was read."""
-        with self.connect() as cx:
-            corpus_rows = [(r[0], r[1]) for r in cx.execute("SELECT title,content FROM documents")]
+        corpus = self._corpus()
         # Words are classified against the vocabulary of the documents themselves (see query.py).
-        analysis = analyze(query, Lexicon((t + " " + c for t, c in corpus_rows), known=SYNONYMS))
+        analysis = analyze(query, corpus["lexicon"])
         if trace is not None:
             trace.update(analysis.trace())
         terms, accented = analysis.terms, analysis.accented
@@ -155,10 +293,10 @@ class Store:
             rows = cx.execute("""SELECT d.*,bm25(document_fts) AS fts_score
                 FROM document_fts JOIN documents d ON document_fts.doc_id=d.id
                 WHERE document_fts MATCH ? ORDER BY fts_score LIMIT ?""", (expression, limit * 3)).fetchall()
-            corpus = [normalize(t + " " + c).split() for t, c in corpus_rows]
-            df = {t: sum(bool(_positions(t, d)) for d in corpus) for t in terms}
+            tokenized = corpus["tokens"]
+            df = {t: sum(bool(_positions(t, d)) for d in tokenized) for t in terms}
             # Rare or unknown words carry more weight than words found in most documents.
-            weight = {t: math.log(1 + len(corpus) / ((df[t] or 0.1) + 0.1)) for t in terms}
+            weight = {t: math.log(1 + len(tokenized) / ((df[t] or 0.1) + 0.1)) for t in terms}
             filtered = []
             for row in rows:
                 doc = dict(row)
