@@ -1,0 +1,2 @@
+# The locked holdout is hashed byte-for-byte (data/eval_v4/HOLDOUT.sha256): never let checkout rewrite line endings.
+data/eval_v4/holdout.json -text

@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "label": "baseline",
+  "set": "legacy",
+  "date_utc": "2026-10-27T01:26:59Z",
+  "code_root": "D:\\Commerce_AI_Copilot_v2_1",
+  "code_commit": "5d626ada913a0105ad1aa3ea1941ace2ac8bb33e",
+  "code_dirty": false,
+  "harness_commit": "5d626ada913a0105ad1aa3ea1941ace2ac8bb33e",
+  "config": {
+    "llm": "off",
+    "embedding": "off",
+    "k": 3
+  },
+  "extra_docs": [],
+  "results": {
+    "dev_positives_hit_at_3": {
+      "passed": 31,
+      "total": 31,
+      "rate": 1.0,
+      "ci95": [
+        0.89,
+        1.0
+      ]
+    },
+    "dev_negatives_correctly_rejected": {
+      "passed": 32,
+      "total": 33,
+      "rate": 0.97,
+      "ci95": [
+        0.847,
+        0.995
+      ]
+    },
+    "old_heldout_positives_hit_at_3": {
+      "passed": 18,
+      "total": 18,
+      "rate": 1.0,
+      "ci95": [
+        0.824,
+        1.0
+      ]
+    },
+    "old_heldout_negatives_correctly_rejected": {
+      "passed": 12,
+      "total": 12,
+      "rate": 1.0,
+      "ci95": [
+        0.757,
+        1.0
+      ]
+    },
+    "caveat": "These sets were used while tuning; the old held-out set was looked at before the last logic change."
+  }
+}

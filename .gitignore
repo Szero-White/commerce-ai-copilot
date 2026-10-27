@@ -7,6 +7,9 @@ runtime/
 .DS_Store
 
 reports/*.json
+# Evaluation evidence that is meant to be committed (baseline before the change, final after it).
+!reports/baseline_*.json
+!reports/final_*.json
 dist/
 *.zip
 *.db

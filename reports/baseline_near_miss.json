@@ -1,0 +1,240 @@
+{
+  "schema": 1,
+  "label": "baseline",
+  "set": "near_miss",
+  "date_utc": "2026-10-27T01:26:58Z",
+  "code_root": "D:\\Commerce_AI_Copilot_v2_1",
+  "code_commit": "5d626ada913a0105ad1aa3ea1941ace2ac8bb33e",
+  "code_dirty": false,
+  "harness_commit": "5d626ada913a0105ad1aa3ea1941ace2ac8bb33e",
+  "config": {
+    "llm": "off",
+    "embedding": "off",
+    "k": 3
+  },
+  "extra_docs": [],
+  "dataset_sha256": "0451d1bcd02a6be0eef782372f8cb7a7f871ab760c9b8f102d85415c6c66b75f",
+  "summary": {
+    "cases": 12,
+    "retrieval_hit_at_3": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "ci95": [
+        null,
+        null
+      ]
+    },
+    "false_abstention": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "ci95": [
+        null,
+        null
+      ]
+    },
+    "wrong_source_only": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "ci95": [
+        null,
+        null
+      ]
+    },
+    "answer_correctness_must_contain": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "ci95": [
+        null,
+        null
+      ]
+    },
+    "citation_correctness": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "ci95": [
+        null,
+        null
+      ]
+    },
+    "unsupported_answer_leaks": {
+      "passed": 1,
+      "total": 12,
+      "rate": 0.083,
+      "ci95": [
+        0.015,
+        0.354
+      ]
+    },
+    "clarify_or_abstain_ok": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "ci95": [
+        null,
+        null
+      ]
+    },
+    "latency_ms": {
+      "p50": 8.05,
+      "p95": 12.68
+    },
+    "by_group": {
+      "near_miss": {
+        "passed": 11,
+        "total": 12,
+        "rate": 0.917,
+        "ci95": [
+          0.646,
+          0.985
+        ]
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "NM03",
+      "group": "near_miss",
+      "question": "Đèn bàn Focus Pro có mấy mức sáng?",
+      "type": "none",
+      "found": [
+        "PRD-103"
+      ],
+      "mode": "extractive_demo",
+      "leaked": [
+        "PRD-103"
+      ],
+      "pass": false
+    }
+  ],
+  "cases": [
+    {
+      "id": "NM01",
+      "group": "near_miss",
+      "question": "Ghế gaming có đèn RGB không?",
+      "type": "none",
+      "found": [],
+      "mode": "no_evidence",
+      "leaked": [],
+      "pass": true
+    },
+    {
+      "id": "NM02",
+      "group": "near_miss",
+      "question": "Bàn Oak 150 kích thước bao nhiêu?",
+      "type": "none",
+      "found": [],
+      "mode": "no_evidence",
+      "leaked": [],
+      "pass": true
+    },
+    {
+      "id": "NM03",
+      "group": "near_miss",
+      "question": "Đèn bàn Focus Pro có mấy mức sáng?",
+      "type": "none",
+      "found": [
+        "PRD-103"
+      ],
+      "mode": "extractive_demo",
+      "leaked": [
+        "PRD-103"
+      ],
+      "pass": false
+    },
+    {
+      "id": "NM04",
+      "group": "near_miss",
+      "question": "Có ghế massage không?",
+      "type": "none",
+      "found": [],
+      "mode": "no_evidence",
+      "leaked": [],
+      "pass": true
+    },
+    {
+      "id": "NM05",
+      "group": "near_miss",
+      "question": "Cửa hàng có bán tủ lạnh không?",
+      "type": "none",
+      "found": [],
+      "mode": "no_evidence",
+      "leaked": [],
+      "pass": true
+    },
+    {
+      "id": "NM06",
+      "group": "near_miss",
+      "question": "Ghế Flex có giảm giá 15% không?",
+      "type": "none",
+      "found": [],
+      "mode": "no_evidence",
+      "leaked": [],
+      "pass": true
+    },
+    {
+      "id": "NM07",
+      "group": "near_miss",
+      "question": "Chính sách bảo hành đèn bàn 5 năm đúng không?",
+      "type": "none",
+      "found": [],
+      "mode": "no_evidence",
+      "leaked": [],
+      "pass": true
+    },
+    {
+      "id": "NM08",
+      "group": "near_miss",
+      "question": "Áo hoodie có bảo hành 24 tháng không?",
+      "type": "none",
+      "found": [],
+      "mode": "no_evidence",
+      "leaked": [],
+      "pass": true
+    },
+    {
+      "id": "NM09",
+      "group": "near_miss",
+      "question": "Mua bàn Oak có được tặng kèm đèn không?",
+      "type": "none",
+      "found": [],
+      "mode": "no_evidence",
+      "leaked": [],
+      "pass": true
+    },
+    {
+      "id": "NM10",
+      "group": "near_miss",
+      "question": "Bàn học sinh cho trẻ em có không?",
+      "type": "none",
+      "found": [],
+      "mode": "no_evidence",
+      "leaked": [],
+      "pass": true
+    },
+    {
+      "id": "NM11",
+      "group": "near_miss",
+      "question": "Có đèn bàn chạy bằng pin không?",
+      "type": "none",
+      "found": [],
+      "mode": "no_evidence",
+      "leaked": [],
+      "pass": true
+    },
+    {
+      "id": "NM12",
+      "group": "near_miss",
+      "question": "Tủ hồ sơ Slim có bản 5 tầng không?",
+      "type": "none",
+      "found": [],
+      "mode": "no_evidence",
+      "leaked": [],
+      "pass": true
+    }
+  ]
+}

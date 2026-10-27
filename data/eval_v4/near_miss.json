@@ -1,0 +1,17 @@
+{
+  "_note": "DEV near-miss set (synthetic): questions that sound answerable (the product family, a number, a name or a policy topic exists) but whose exact premise is NOT in the data. Any returned source other than `allow` counts as a leak. Used to calibrate the evidence gate; zero leaks is the calibration target.",
+  "cases": [
+    {"id": "NM01", "group": "near_miss", "question": "Ghế gaming có đèn RGB không?", "type": "none"},
+    {"id": "NM02", "group": "near_miss", "question": "Bàn Oak 150 kích thước bao nhiêu?", "type": "none"},
+    {"id": "NM03", "group": "near_miss", "question": "Đèn bàn Focus Pro có mấy mức sáng?", "type": "none"},
+    {"id": "NM04", "group": "near_miss", "question": "Có ghế massage không?", "type": "none"},
+    {"id": "NM05", "group": "near_miss", "question": "Cửa hàng có bán tủ lạnh không?", "type": "none"},
+    {"id": "NM06", "group": "near_miss", "question": "Ghế Flex có giảm giá 15% không?", "type": "none"},
+    {"id": "NM07", "group": "near_miss", "question": "Chính sách bảo hành đèn bàn 5 năm đúng không?", "type": "none"},
+    {"id": "NM08", "group": "near_miss", "question": "Áo hoodie có bảo hành 24 tháng không?", "type": "none"},
+    {"id": "NM09", "group": "near_miss", "question": "Mua bàn Oak có được tặng kèm đèn không?", "type": "none"},
+    {"id": "NM10", "group": "near_miss", "question": "Bàn học sinh cho trẻ em có không?", "type": "none"},
+    {"id": "NM11", "group": "near_miss", "question": "Có đèn bàn chạy bằng pin không?", "type": "none"},
+    {"id": "NM12", "group": "near_miss", "question": "Tủ hồ sơ Slim có bản 5 tầng không?", "type": "none"}
+  ]
+}
