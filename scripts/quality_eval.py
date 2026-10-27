@@ -165,6 +165,64 @@ def run_legacy(store, settings):
             "caveat": "These sets were used while tuning; the old held-out set was looked at before the last logic change."}
 
 
+FRESH_DIR = EVAL_DIR / "fresh"
+
+
+def ingest_fresh(store):
+    """Import the fresh files through parsing + the checkout's own storage. Works on any checkout (old or new)."""
+    from scripts.ingest import parse_file
+    count = 0
+    for name, category in (("fresh_products.csv", "product"), ("fresh_policies.md", "policy")):
+        docs, _ = parse_file(FRESH_DIR / name, category=category)
+        for doc in docs:
+            store.upsert(doc)
+        count += len(docs)
+    return count
+
+
+def resolve_ids(cases, store):
+    """'@SKU' -> id of the document titled '... - SKU'; '@policy:<source>:<n>' -> '<source> / phần n'."""
+    titles = {d["title"]: d["id"] for d in store.documents()}
+
+    def one(ref):
+        if not ref.startswith("@"):
+            return ref
+        if ref.startswith("@policy:"):
+            _, source, n = ref.split(":")
+            return titles[f"{source} / phần {n}"]
+        sku = ref[1:]
+        return next(i for t, i in titles.items() if t.endswith(f" - {sku}"))
+
+    return [{**c, **{k: [one(x) for x in c[k]] for k in ("ids", "exclude", "allow") if k in c}} for c in cases]
+
+
+def lifecycle(store, settings):
+    """Update, removal and delete on the fresh data: nothing old may be served. Needs the v4 storage (apply/delete)."""
+    from app.services import question_answer
+    from scripts.ingest import ingest_file
+    if not hasattr(store, "apply"):
+        return {"supported": False, "note": "this checkout has no update-by-source, replace or delete"}
+
+    def ask(q):
+        r = question_answer(store, settings, q)
+        return [s["id"] for s in r["sources"]], r["answer"]
+
+    checks = {}
+    ingest_file(store, FRESH_DIR / "fresh_products_v2.csv", source="fresh_products", replace=True)   # price change + one product removed
+    ids, answer = ask("Ghế Aero X7 giá bao nhiêu?")
+    checks["update: the new price is served"] = bool(ids) and "2190000" in answer
+    checks["update: the old price is not served"] = "2490000" not in answer
+    checks["update: the old price matches nothing"] = store.fts_search("Aero X7 2490000") == []
+    ids, _ = ask("Tai nghe chống ồn Wave H6 pin dùng bao lâu?")
+    checks["removed product: not returned"] = not any("WAVE-H6" in (store.document(i) or {}).get("title", "") for i in ids)
+    checks["removed product: not in documents"] = not any("WAVE-H6" in d["title"] for d in store.documents())
+    removed = store.delete_source("fresh_policies")
+    ids, _ = ask("Lắp ráp tại nhà có miễn phí không?")
+    checks["deleted policy: not returned"] = removed >= 1 and not any("fresh_policies" in (store.document(i) or {}).get("title", "") for i in ids)
+    checks["indexes are consistent after update and delete"] = store.consistency_report()["ok"]
+    return {"supported": True, "checks": checks, "all_passed": all(checks.values())}
+
+
 def load_set(name):
     path = {"dev": "dev.json", "near_miss": "near_miss.json", "holdout": "holdout.json", "fresh": "fresh/cases.json"}[name]
     full = EVAL_DIR / path
@@ -213,7 +271,12 @@ def main(argv=None):
         else:
             cases, path = load_set(args.set)
             report["dataset_sha256"] = sha256_file(path)
+            if args.set == "fresh":
+                report["fresh_documents_ingested"] = ingest_fresh(store)
+                cases = resolve_ids(cases, store)
             results, latencies = run_cases(cases, store, settings)
+            if args.set == "fresh":
+                report["lifecycle"] = lifecycle(store, settings)
             report["summary"] = summarize(results, latencies)
             if args.set != "holdout" or args.final:
                 report["failures"] = [r for r in results if not r["pass"]]

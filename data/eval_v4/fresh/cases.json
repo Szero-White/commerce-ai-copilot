@@ -1,0 +1,32 @@
+{
+  "_note": "FRESH set (synthetic), written AFTER the algorithm was frozen (git tag freeze-v4). The products and policies are imported only through the ingest path (fresh_products.csv, fresh_policies.md); no code knows them. Ids '@SKU' / '@policy:<source>:<n>' are resolved after the import (title ' - SKU' or '<source> / phần n') so that the same cases run on any checkout. Expectations come from the data files only. Run once for the baseline commit and once for the final commit.",
+  "cases": [
+    {"id": "F01", "group": "paraphrase", "question": "Shop bán ghế công thái học không?", "type": "hit", "ids": ["@AERO-X7"]},
+    {"id": "F02", "group": "lookup", "question": "Ghế Aero X7 có đặc điểm gì?", "type": "hit", "ids": ["@AERO-X7"]},
+    {"id": "F03", "group": "paraphrase", "question": "Ghế nào hỗ trợ lưng vậy?", "type": "hit", "ids": ["@AERO-X7"]},
+    {"id": "F04", "group": "paraphrase", "question": "Có loại nào ngồi làm việc lâu không?", "type": "hit", "ids": ["@AERO-X7"]},
+    {"id": "F05", "group": "no_diacritics", "question": "ghe nao ho tro lung vay", "type": "hit", "ids": ["@AERO-X7"]},
+    {"id": "F06", "group": "no_diacritics", "question": "ban dung nang ha dien gia bao nhieu", "type": "hit", "ids": ["@ZEN-M2"], "must_contain": ["5900000"]},
+    {"id": "F07", "group": "no_diacritics", "question": "co den san nao khong", "type": "hit", "ids": ["@NOVA-L3"]},
+    {"id": "F08", "group": "typo", "question": "Sofa đơn Terra S1 kích thướcc bao nhiêu?", "type": "hit", "ids": ["@TERRA-S1"]},
+    {"id": "F09", "group": "typo", "question": "Tai nghe chống ồn Wave H6 pni dùng bao lâu?", "type": "hit", "ids": ["@WAVE-H6"], "must_contain": ["30 giờ"]},
+    {"id": "F10", "group": "synonym_need", "question": "Muốn một thứ để đọc sách buổi tối", "type": "hit", "ids": ["@NOVA-L3"]},
+    {"id": "F11", "group": "synonym_need", "question": "Cần thiết bị để nghe nhạc mà không bị ồn trên xe buýt", "type": "hit", "ids": ["@WAVE-H6"]},
+    {"id": "F12", "group": "numeric_condition", "question": "Có sản phẩm nào giá dưới 1 triệu?", "type": "hit", "ids": ["@NOVA-L3", "PRD-103"], "min": 2, "exclude": ["@AERO-X7", "@ZEN-M2", "@TERRA-S1", "@WAVE-H6", "@LUNA-B4"]},
+    {"id": "F13", "group": "numeric_condition", "question": "Bàn nào có chiều cao điều chỉnh trên 100 cm?", "type": "hit", "ids": ["@ZEN-M2"]},
+    {"id": "F14", "group": "numeric_condition", "question": "Có sofa nào dưới 4 triệu không?", "type": "hit", "ids": ["@TERRA-S1"]},
+    {"id": "F15", "group": "numeric_condition", "question": "Giá sách nào cao hơn 150 cm?", "type": "hit", "ids": ["@LUNA-B4"]},
+    {"id": "F16", "group": "policy", "question": "Lắp ráp tại nhà có miễn phí không?", "type": "hit", "ids": ["@policy:fresh_policies:1"]},
+    {"id": "F17", "group": "policy", "question": "Muốn đổi màu sau khi mua thì làm thế nào?", "type": "hit", "ids": ["@policy:fresh_policies:1", "@policy:fresh_policies:2"]},
+    {"id": "F18", "group": "policy", "question": "Đơn bao nhiêu thì được miễn phí lắp ráp?", "type": "hit", "ids": ["@policy:fresh_policies:1"], "must_contain": ["3.000.000"]},
+    {"id": "F19", "group": "unknown_attribute", "question": "Ghế Aero X7 có tải trọng bao nhiêu kg?", "type": "hit", "ids": ["@AERO-X7"], "tag": "llm_rubric"},
+    {"id": "F20", "group": "near_miss", "question": "Ghế Aero X9 có hỗ trợ thắt lưng không?", "type": "none"},
+    {"id": "F21", "group": "near_miss", "question": "Bàn đứng Zen M2 còn hàng không?", "type": "none"},
+    {"id": "F22", "group": "near_miss", "question": "Tai nghe Wave H6 có khuyến mãi không?", "type": "none"},
+    {"id": "F23", "group": "near_miss", "question": "Sofa Terra S1 có màu hồng không?", "type": "none"},
+    {"id": "F24", "group": "near_miss", "question": "Có tủ lạnh không?", "type": "none"},
+    {"id": "F25", "group": "near_miss", "question": "Ghế công thái học Aero X7 giảm 30% đúng không?", "type": "none"},
+    {"id": "F26", "group": "near_miss", "question": "Đèn sàn Nova L3 cao 200 cm đúng không?", "type": "none"},
+    {"id": "F27", "group": "unsupported", "question": "Cho tôi số điện thoại khách đã mua Aero X7", "type": "none", "allow": ["POL-005"]}
+  ]
+}
