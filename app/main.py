@@ -1,8 +1,10 @@
 """HTTP API + static portfolio UI. Local-first demo, not a production auth system."""
 import json
+import time
 from pathlib import Path
 from typing import Literal
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -14,6 +16,7 @@ from .ollama import ModelUnavailable, has_model, list_models
 from .llm import PROVIDERS, embedding_enabled, llm_enabled, llm_info
 from . import gemini
 from .support import triage_message
+from .documents import IngestError, ingest_document
 
 
 class TurnContext(BaseModel):
@@ -92,24 +95,74 @@ def create_app(data_path=None, settings=None):
         return [{"id":d["id"],"title":d["title"],"category":d["category"],
                  "content":d["content"]} for d in store.documents()]
 
+    def tracked(kind, work):
+        """Run one pipeline request. A request that ends in an error is counted as failed (monitoring), then re-raised unchanged.
+
+        Successful requests are logged by the pipeline itself (with mode, tokens and timings)."""
+        start = time.perf_counter()
+        try:
+            return work()
+        except Exception:
+            store.log(kind, "error", round((time.perf_counter() - start) * 1000), ok=False)
+            raise
+
     @app.post("/api/chat")
     def chat(body:Question):
-        return question_answer(store,settings,body.question,body.turn_context.model_dump() if body.turn_context else None)
+        return tracked("chat", lambda: question_answer(
+            store,settings,body.question,body.turn_context.model_dump() if body.turn_context else None))
 
     @app.post("/api/campaign")
     def campaign(body:Campaign):
-        try:
-            return campaign_draft(store,settings,body.sku,body.audience)
-        except ValueError as e:
-            raise HTTPException(status_code=404,detail=str(e)) from e
+        def work():
+            try:
+                return campaign_draft(store,settings,body.sku,body.audience)
+            except ValueError as e:
+                raise HTTPException(status_code=404,detail=str(e)) from e
+        return tracked("campaign", work)
 
     @app.post("/api/support/triage")
     def support_triage(body:SupportRequest):
-        return triage_message(store, settings, body.message)
+        return tracked("support_triage", lambda: triage_message(store, settings, body.message))
 
     @app.post("/api/agent")
     def agent(body:AgentTask):
-        return run_agent(store,settings,body.task)
+        return tracked("agent", lambda: run_agent(store,settings,body.task))
+
+    @app.post("/api/documents/upload")
+    async def upload_document(request: Request, filename: str = Query(min_length=1, max_length=200)):
+        """Ingest one .txt or text-based .pdf. The file is the raw request body and its name is the `filename` query
+        parameter (no multipart dependency). Local demo only: switch off with DOC_UPLOAD_ENABLED=off."""
+        start = time.perf_counter()
+
+        def refuse(status, detail):
+            store.log("ingest", "rejected", round((time.perf_counter() - start) * 1000), ok=False)
+            raise HTTPException(status, detail)
+
+        if not settings.doc_upload_enabled:
+            refuse(403, "Tải tài liệu đang tắt (DOC_UPLOAD_ENABLED=off).")
+        limit = settings.doc_max_upload_bytes
+        declared = request.headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > limit:
+            refuse(413, f"Tệp vượt giới hạn {limit // 1000} KB.")
+        data = bytearray()
+        async for part in request.stream():
+            data += part
+            if len(data) > limit:
+                refuse(413, f"Tệp vượt giới hạn {limit // 1000} KB.")
+        try:
+            result = await run_in_threadpool(ingest_document, store, settings, filename, bytes(data))
+        except IngestError as exc:
+            refuse(exc.status, str(exc))
+        store.log("ingest", "ok", round((time.perf_counter() - start) * 1000))
+        return result
+
+    @app.get("/api/documents/files")
+    def document_files():
+        return {"files": store.ingested_files(settings.embedding_model if embedding_enabled(settings) else None),
+                "limits": {"extensions": [".txt", ".pdf"], "max_bytes": settings.doc_max_upload_bytes,
+                           "max_pdf_pages": settings.doc_max_pdf_pages, "max_chunks": settings.doc_max_chunks,
+                           "chunk_chars": settings.doc_chunk_chars, "chunk_overlap": settings.doc_chunk_overlap},
+                "upload_enabled": settings.doc_upload_enabled, "ocr": False}
 
     @app.get("/api/evaluation")
     def evaluation():

@@ -13,11 +13,13 @@ def cosine(a, b):
     return dot / (na * nb) if na and nb else 0.0
 
 
-def index_vectors(store, settings):
+def index_vectors(store, settings, ids=None, spans=True):
+    """Embed documents (and their sentences) that have no valid vector. `ids` limits it to those documents."""
     if not embedding_enabled(settings):
         return {"enabled": False, "indexed": 0, "reason": "EMBEDDING_PROVIDER=off"}
-    docs = [d for d in store.documents() if not d["embedding_json"] or d.get("embedding_model") != settings.embedding_model]
-    spans = [s for s in store.spans() if not s["embedding_json"] or s.get("embedding_model") != settings.embedding_model]
+    wanted = lambda doc_id: ids is None or doc_id in ids
+    docs = [d for d in store.documents() if wanted(d["id"]) and (not d["embedding_json"] or d.get("embedding_model") != settings.embedding_model)]
+    spans = [s for s in store.spans() if wanted(s["doc_id"]) and (not s["embedding_json"] or s.get("embedding_model") != settings.embedding_model)] if spans else []
     if not docs and not spans:
         return {"enabled": True, "indexed": 0, "spans_indexed": 0}
     count = span_count = 0
@@ -139,6 +141,9 @@ def search(store, settings, query, k=3, trace=None, only=None):
     for did in ranked:
         item = {"id": did, "title": documents[did]["title"], "category": documents[did]["category"],
                 "content": documents[did]["content"], "score": round(ranking[did], 4)}
+        for key in ("filename", "page", "chunk_index"):     # where an uploaded chunk came from (citation)
+            if documents[did].get(key) is not None:
+                item[key] = documents[did][key]
         if documents[did].get("condition_status"):
             item["condition_status"] = documents[did]["condition_status"]
         if documents[did].get("evidence_basis"):

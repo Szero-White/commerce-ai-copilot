@@ -101,7 +101,7 @@ def test_navigation_collapses_for_tablets_and_the_phone_menu_is_compact():
 import hashlib
 
 ACCEPTED_LAYOUT = {   # sha256 of the files as accepted in real Chrome (line endings normalised); update ONLY for a deliberate UI change
-    "index.html": "3c1e375bec1a9e978166a3c84245132675c10d571fdc5dba95999d3d27d02719",   # quality page wording (deliberate change)
+    "index.html": "432f93fa8d5561b54ae5bf17d0999c20ddbbfeeeb3f384b10aad73d52269a2e9",   # + upload panel, monitoring lines (deliberate change)
     "style.css": "8e7c357b181a5279af47d2b1ff1c89197942458f34421dc211013ccf347ec24d",
     "styles/agent-support.css": "79ff70fd664dca6d810b2be2f4bebeecf146891a9e0ad963edfa095669f131b6",
     "styles/assistant.css": "b2ffe31fb2090cf540aa1d73cd592b3612f0c29555292dd4fb22540db67b43be",
@@ -130,6 +130,18 @@ def test_quality_page_states_what_the_benchmark_measures_and_takes_every_number_
         assert f'id="{element}"' in html
     assert "d.negative_rejection.passed" in js and "d.negative_rejection.total" in js and "d.passed" in js and "d.total" in js
     assert "20/33" not in js + html and "60,6" not in js + html           # nothing hard-coded: the backend result is shown
+
+
+def test_upload_panel_and_monitoring_lines_use_the_api_and_existing_classes():
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    for element in ("upload-form", "doc-file", "upload-btn", "upload-status", "doc-files", "doc-count",
+                    "metric-ok", "metric-retrieval", "metric-llm", "metric-last"):
+        assert f'id="{element}"' in html, element
+    assert "/api/documents/upload?filename=" in js and "/api/documents/files" in js and "encodeURIComponent(file.name)" in js
+    assert "m.successful" in js and "m.failed" in js and "m.retrieval_avg_ms" in js and "m.llm_calls" in js and "m.last_request_at" in js
+    upload_code = js[js.index("async function loadFiles"):js.index("function elem(")]
+    assert "innerHTML" not in upload_code and "textContent" in upload_code   # file names come from users: text only, never markup
 
 
 def test_chat_sends_back_the_previous_turn_context_and_forgets_it_on_errors():

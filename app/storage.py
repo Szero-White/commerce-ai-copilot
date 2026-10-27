@@ -12,6 +12,7 @@ from .query import (ALIASES, STOP, STOP_ACCENTED, Lexicon, analyze, normalize,  
                     raw_tokens as _raw_tokens)
 
 SPAN_MIN_CHARS = 20
+META_COLUMNS = (("filename", "TEXT"), ("page", "INTEGER"), ("chunk_index", "INTEGER"), ("ingested_at", "TEXT"))
 
 
 def split_sentences(text):
@@ -123,6 +124,14 @@ class Store:
                 cx.execute("ALTER TABLE documents ADD COLUMN embedding_model TEXT")
             if "source" not in columns:
                 cx.execute("ALTER TABLE documents ADD COLUMN source TEXT")
+            for name, kind in META_COLUMNS:       # provenance of uploaded chunks (see documents.py)
+                if name not in columns:
+                    cx.execute(f"ALTER TABLE documents ADD COLUMN {name} {kind}")
+            event_columns = {row[1] for row in cx.execute("PRAGMA table_info(events)")}
+            for name, kind in (("ok", "INTEGER NOT NULL DEFAULT 1"), ("retrieval_ms", "INTEGER"),
+                               ("llm_calls", "INTEGER NOT NULL DEFAULT 0")):
+                if name not in event_columns:
+                    cx.execute(f"ALTER TABLE events ADD COLUMN {name} {kind}")
             count = cx.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
             if count == 0:
                 docs = json.loads((ROOT / "data" / "seed_documents.json").read_text(encoding="utf-8"))
@@ -174,10 +183,13 @@ class Store:
             if source is not None and old["source"] != source:
                 cx.execute("UPDATE documents SET source=? WHERE id=?", (source, d["id"]))
             return "unchanged"
-        cx.execute("INSERT INTO documents(id,title,category,content,embedding_json,embedding_model,source) VALUES(?,?,?,?,NULL,NULL,?) "
+        cx.execute("INSERT INTO documents(id,title,category,content,embedding_json,embedding_model,source,"
+                   "filename,page,chunk_index,ingested_at) VALUES(?,?,?,?,NULL,NULL,?,?,?,?,?) "
                    "ON CONFLICT(id) DO UPDATE SET title=excluded.title,category=excluded.category,content=excluded.content,"
-                   "embedding_json=NULL,embedding_model=NULL,source=COALESCE(excluded.source,documents.source)",
-                   (d["id"], d["title"], d["category"], d["content"], source))
+                   "embedding_json=NULL,embedding_model=NULL,source=COALESCE(excluded.source,documents.source),"
+                   "filename=excluded.filename,page=excluded.page,chunk_index=excluded.chunk_index,ingested_at=excluded.ingested_at",
+                   (d["id"], d["title"], d["category"], d["content"], source,
+                    d.get("filename"), d.get("page"), d.get("chunk_index"), d.get("ingested_at")))
         cls._index_fts(cx, d)
         cls._write_spans(cx, d["id"], d["content"])      # sentence vectors of the old text are dropped with it
         cls._bump(cx)
@@ -427,14 +439,34 @@ class Store:
                 filtered.sort(key=lambda doc: (not names_it(doc), doc["category"] != "product"))
             return _verified_first(filtered)
 
-    def log(self, kind, mode, ms, input_tokens=0, output_tokens=0):
+    def ingested_files(self, embedding_model=None):
+        """Uploaded files (one row per file name): chunks, pages, characters, how many chunks have a vector, last upload."""
+        with self.connect() as cx:
+            return [dict(r) for r in cx.execute("""
+                SELECT filename, COUNT(*) AS chunks, COUNT(DISTINCT page) AS pages, SUM(LENGTH(content)) AS characters,
+                       SUM(embedding_json IS NOT NULL AND embedding_model IS ?) AS vectors, MAX(ingested_at) AS ingested_at
+                FROM documents WHERE filename IS NOT NULL GROUP BY source ORDER BY MAX(ingested_at) DESC, filename""",
+                (embedding_model,))]
+
+    def log(self, kind, mode, ms, input_tokens=0, output_tokens=0, ok=True, retrieval_ms=None, llm_calls=0):
+        """One row per pipeline request. Never stores the question, only counts, timings and the mode."""
         with self._lock, self.connect() as cx:
-            cx.execute("INSERT INTO events(kind,mode,latency_ms,input_tokens,output_tokens) VALUES(?,?,?,?,?)",
-                       (kind, mode, ms, input_tokens, output_tokens))
+            cx.execute("INSERT INTO events(kind,mode,latency_ms,input_tokens,output_tokens,ok,retrieval_ms,llm_calls) "
+                       "VALUES(?,?,?,?,?,?,?,?)",
+                       (kind, mode, ms, input_tokens, output_tokens, int(bool(ok)), retrieval_ms, llm_calls))
 
     def metrics(self):
         with self.connect() as cx:
-            row = cx.execute("""SELECT COUNT(*) AS calls,COALESCE(AVG(latency_ms),0) AS avg_ms,
-                COALESCE(SUM(input_tokens),0) AS tokens_in,COALESCE(SUM(output_tokens),0) AS tokens_out
-                FROM events""").fetchone()
-            return dict(row)
+            row = dict(cx.execute("""SELECT COUNT(*) AS calls, COALESCE(SUM(ok),0) AS successful,
+                COALESCE(SUM(1-ok),0) AS failed, COALESCE(AVG(latency_ms),0) AS avg_ms,
+                AVG(retrieval_ms) AS retrieval_avg_ms, COUNT(retrieval_ms) AS retrieval_samples,
+                COALESCE(SUM(llm_calls),0) AS llm_calls, COALESCE(SUM(mode LIKE '%unavailable%'),0) AS llm_unavailable,
+                COALESCE(SUM(input_tokens),0) AS tokens_in, COALESCE(SUM(output_tokens),0) AS tokens_out,
+                MAX(created_at) AS last_request_at FROM events""").fetchone())
+            row["by_kind"] = {r["kind"]: r["n"] for r in cx.execute("SELECT kind, COUNT(*) AS n FROM events GROUP BY kind")}
+        row["total_requests"] = row["calls"]          # `calls` is the original name, kept for existing clients
+        if row["retrieval_avg_ms"] is not None:
+            row["retrieval_avg_ms"] = round(row["retrieval_avg_ms"], 1)
+        if row["last_request_at"]:                    # SQLite stores UTC as "YYYY-MM-DD HH:MM:SS"
+            row["last_request_at"] = row["last_request_at"].replace(" ", "T") + "Z"
+        return row

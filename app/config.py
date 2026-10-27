@@ -29,3 +29,10 @@ class Settings:
     max_output_tokens: int = max(64, min(_int_env("MAX_OUTPUT_TOKENS", 256), 512))
     num_ctx: int = max(1024, min(_int_env("OLLAMA_NUM_CTX", 4096), 32768))
     max_context_chars: int = max(500, min(_int_env("MAX_CONTEXT_CHARS", 2600), 6000))
+    # Document upload (local demo; there is no authentication, so the endpoint can be switched off with DOC_UPLOAD_ENABLED=off).
+    doc_upload_enabled: bool = os.getenv("DOC_UPLOAD_ENABLED", "on").lower() not in {"off", "0", "false", "no"}
+    doc_chunk_chars: int = max(200, min(_int_env("DOC_CHUNK_CHARS", 800), 3000))
+    doc_chunk_overlap: int = max(0, min(_int_env("DOC_CHUNK_OVERLAP", 120), 1500))
+    doc_max_upload_bytes: int = max(1000, min(_int_env("DOC_MAX_UPLOAD_BYTES", 5_000_000), 20_000_000))
+    doc_max_pdf_pages: int = max(1, min(_int_env("DOC_MAX_PDF_PAGES", 100), 500))
+    doc_max_chunks: int = max(1, min(_int_env("DOC_MAX_CHUNKS", 150), 1000))

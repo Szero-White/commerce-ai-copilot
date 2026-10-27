@@ -52,8 +52,10 @@ def run_agent(store,settings,task,diagnostics=False):
     llm_failed=False
     rejection=None
     max_prompt=0
+    llm_calls=0
     try:
         for step_index in range(3):
+            llm_calls+=1
             final_turn=step_index==2   # the prompt allows 2 tool calls; the 3rd turn must answer in text
             payload={"model":settings.ollama_model,"messages":messages,"stream":False,
                      **({} if final_turn else {"tools":TOOLS}),"options":{"num_predict":settings.max_output_tokens,"temperature":0.1,
@@ -125,7 +127,7 @@ def run_agent(store,settings,task,diagnostics=False):
     else:
         mode='tool_calling_agent'
     elapsed=round((time.perf_counter()-started)*1000)
-    store.log('agent',mode,elapsed,token_in,token_out)
+    store.log('agent',mode,elapsed,token_in,token_out,llm_calls=llm_calls)
     result={"mode":mode,"answer":answer,"steps":trace,"approval_required":True,
             "tokens_in":token_in,"tokens_out":token_out,"latency_ms":elapsed,
             "context_window":context_window(settings,max_prompt),"llm":llm_info(settings)}

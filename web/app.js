@@ -129,7 +129,7 @@ async function init() {
       o.textContent = p.title;
       select.appendChild(o);
     }
-    await loadMetrics();
+    await Promise.all([loadMetrics(), loadFiles()]);
   } catch (e) {
     $('#backend-status').textContent = 'Không kết nối được API';
     toast('Không kết nối được backend: ' + e.message);
@@ -144,10 +144,70 @@ async function loadMetrics() {
     $('#metric-latency').textContent = Math.round(m.avg_ms) + ' ms';
     $('#metric-in').textContent = fmt(m.tokens_in);
     $('#metric-out').textContent = fmt(m.tokens_out);
+    $('#metric-ok').textContent = `${fmt(m.successful)} / ${fmt(m.failed)}`;
+    $('#metric-retrieval').textContent = m.retrieval_avg_ms === null ? '—' : m.retrieval_avg_ms + ' ms';
+    $('#metric-llm').textContent = `${fmt(m.llm_calls)} / ${fmt(m.llm_unavailable)}`;
+    $('#metric-last').textContent = m.last_request_at ? new Date(m.last_request_at).toLocaleString('vi-VN') : '—';
   } catch (e) {
     toast(e.message);
   }
 }
+async function loadFiles() {
+  try {
+    const d = await api('/api/documents/files');
+    $('#doc-count').textContent = `${d.files.length} tệp`;
+    $('#upload-btn').disabled = !d.upload_enabled;
+    const body = $('#doc-files');
+    body.replaceChildren();
+    if (!d.files.length) {
+      const row = document.createElement('tr');
+      const cell = elem('td', 'muted empty-row', d.upload_enabled ? 'Chưa có tệp nào được nạp.' : 'Tính năng tải tài liệu đang tắt (DOC_UPLOAD_ENABLED=off).');
+      cell.colSpan = 5;
+      row.append(cell);
+      body.append(row);
+      return;
+    }
+    for (const f of d.files) {
+      const row = document.createElement('tr');
+      const when = f.ingested_at ? new Date(f.ingested_at).toLocaleString('vi-VN') : '—';
+      [f.filename, f.pages || '—', f.chunks, `${f.vectors || 0}/${f.chunks}`, when]
+        .forEach(value => row.append(elem('td', null, String(value))));
+      body.append(row);
+    }
+  } catch (e) {
+    toast(e.message);
+  }
+}
+$('#upload-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const file = $('#doc-file').files[0];
+  if (!file) return;
+  const btn = $('#upload-btn');
+  btn.disabled = true;
+  $('#upload-status').textContent = 'Đang đọc, làm sạch, tách đoạn và lập chỉ mục…';
+  try {
+    // The file is the raw request body; its name travels in the query string (no multipart needed).
+    const d = await api('/api/documents/upload?filename=' + encodeURIComponent(file.name), {
+      method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file
+    });
+    const emb = d.embedding;
+    const vectors = emb.enabled
+      ? `${emb.indexed} vector`
+      : `chưa có vector (${emb.reason === 'EMBEDDING_PROVIDER=off' ? 'embedding đang tắt' : 'nhà cung cấp embedding lỗi'}), tìm theo từ khóa BM25`;
+    const pages = d.filename.toLowerCase().endsWith('.pdf') ? `${d.pages} trang, ` : '';
+    $('#upload-status').textContent = `Đã nạp ${d.filename}: ${pages}${d.chunks} đoạn, ${vectors}.`;
+    $('#upload-form').reset();
+    await loadFiles();
+    loadMetrics();
+    api('/api/health').then(h => { $('#stat-docs').textContent = fmt(h.documents); }).catch(() => {});
+  } catch (err) {
+    $('#upload-status').textContent = 'Không nạp được: ' + err.message;
+    toast(err.message);
+    loadMetrics();
+  } finally {
+    btn.disabled = false;
+  }
+});
 function elem(tag, klass, text) {
   const el = document.createElement(tag);
   if (klass) el.className = klass;
@@ -177,7 +237,8 @@ function renderSources(items) {
     top.append(elem('span', null, 'hạng ' + (i + 1)));
     card.append(
       top,
-      elem('h4', null, s.title),
+      elem('h4', null, s.filename
+        ? `${s.filename} · ${s.page ? 'trang ' + s.page + ' · ' : ''}đoạn ${s.chunk_index}` : s.title),
       elem('p', null, s.content.slice(0, 260) + (s.content.length > 260 ? '…' : ''))
     );
     el.append(card);

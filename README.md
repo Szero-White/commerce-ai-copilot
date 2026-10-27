@@ -65,7 +65,8 @@ web/ (static UI) ──HTTP──> app/main.py (FastAPI)
                               ├─ quantities.py numbers with units, comparisons, computed from document text
                               ├─ gate.py       ONE evidence gate for every candidate document
                               ├─ retrieval.py  gated BM25 candidates; embeddings (if on) only re-rank them
-                              ├─ storage.py    SQLite + FTS5, atomic import/delete, consistency check
+                              ├─ documents.py  upload ingestion: parse (TXT/PDF) -> clean -> chunk -> metadata -> index
+                              ├─ storage.py    SQLite + FTS5, atomic import/delete, consistency check, request metrics
                               ├─ support.py    rule-based triage (no LLM)
                               ├─ agent.py      bounded read-only tool loop
                               ├─ evidence.py   citation / number / promise / negation guards (LLM answers)
@@ -87,6 +88,43 @@ python -m scripts.check_index                                          # documen
 
 A file is applied in **one transaction** (all or nothing). Ids come from the source name and the SKU, not from the file path. The BM25 index, the vocabulary used for typo repair and the caches follow the documents immediately (a running server notices an import made by another process). Vectors are **not** updated automatically: changed or new documents have none until `python -m scripts.index_embeddings` is run (it calls the embedding provider). The seed JSON is loaded only into an empty database. There is **no real-time sync and no automatic crawler**; data enters through this CLI.
 
+## Document ingestion (upload a real file)
+
+```
+Upload → Parse → Clean → Chunk → Metadata → Embedding → Index → Retrieval → RAG
+```
+
+| Step | What happens (`app/documents.py`) |
+|---|---|
+| Upload | `POST /api/documents/upload?filename=<name>`; the file is the raw request body (no multipart dependency). Only `.txt` (UTF-8) and text-based `.pdf`; the name is reduced to a base name with safe characters; size, page and chunk limits apply. |
+| Parse | TXT is decoded as UTF-8. PDF text is read page by page with `pypdf`. A file that is not really a PDF, is encrypted, is corrupt, or has **no text layer** (a scan) is refused with a clear 4xx message; nothing is written. |
+| Clean | Unicode NFC, control characters and zero-width marks removed, whitespace collapsed, lines of a paragraph joined, line-end hyphenation joined, lone page-number lines removed (PDF). |
+| Chunk | Sentence-aware chunks of at most `DOC_CHUNK_CHARS` (800) with `DOC_CHUNK_OVERLAP` (120) characters repeated from the previous chunk. Chunks never cross a PDF page, so the page of a citation is exact. |
+| Metadata | Per chunk, in the `documents` table: `id` (`UPL-<hash of file name>-<chunk number>`), `filename`, `page` (PDF only), `chunk_index`, `source` (`upload:<filename>`), `ingested_at`. |
+| Embedding | With `EMBEDDING_PROVIDER` on, only the **new chunks** are embedded by the provider already configured (not the seed documents, and not the sentence vectors: run `python -m scripts.index_embeddings` for those). Provider off or failing: the chunks are still searchable by BM25 and the response says `retrieval: bm25_only`. |
+| Index | All chunks of a file are written in **one transaction** with the BM25 index (all or nothing). Uploading the same file name again replaces its chunks (no orphans). |
+| Retrieval / RAG | Chunks go through the same evidence gate as every other document (category `document`, so questions about private data stay closed). Sources carry `filename`, `page`, `chunk_index`; answers show `(nguồn: file.pdf, trang 2, đoạn 2)`, and LLM answers get a code-written `Nguồn tệp:` line. |
+
+`GET /api/documents/files` lists the uploaded files (chunks, pages, how many chunks have vectors, upload time) and the active limits. The UI has a small panel for both on the *Trợ lý RAG* page. Removing a file is a CLI action: `python -m scripts.ingest --delete-source "upload:<filename>"`.
+
+Settings (environment): `DOC_UPLOAD_ENABLED` (default on; `off` returns 403), `DOC_CHUNK_CHARS`, `DOC_CHUNK_OVERLAP`, `DOC_MAX_UPLOAD_BYTES` (5 MB), `DOC_MAX_PDF_PAGES` (100), `DOC_MAX_CHUNKS` (150, which also caps the number of embedding requests per upload).
+
+Privacy: with `EMBEDDING_PROVIDER=gemini`, the text of uploaded chunks is sent to Google for embedding. Use synthetic or public documents only. An uploaded file is untrusted data: it is stored and retrieved, never executed or followed as an instruction.
+
+## Monitoring (demo level)
+
+Every pipeline request (`chat`, `campaign`, `support_triage`, `agent`, `ingest`) writes one row to the `events` table: kind, mode, latency, token counts, success flag, retrieval latency, LLM call count. **The question text is never stored.** `GET /api/metrics` (and the *Quan sát / tổng hợp* panel of the Quality page) reports:
+
+| Metric | Meaning |
+|---|---|
+| `total_requests` (`calls`), `successful`, `failed` | A request fails when it ends in an error response: an unhandled exception, a refused upload, an unknown SKU. A *degraded* answer (for example the LLM was unreachable and the passages were shown instead) is **successful**, and is counted separately in `llm_unavailable`. |
+| `avg_ms`, `retrieval_avg_ms`, `retrieval_samples` | Mean latency of all requests; mean time of the retrieval step of chat requests (clarifications skip retrieval). |
+| `llm_calls`, `llm_unavailable` | Model calls attempted (agent: one per loop turn), and requests whose model was unreachable. |
+| `tokens_in`, `tokens_out` | Provider-reported when an LLM answered; otherwise a characters/3 **estimate**, not billing. |
+| `last_request_at`, `by_kind` | UTC time of the latest request; counts per kind. |
+
+Not included: percentiles, alerting, per-user data, dashboards, Prometheus/Grafana, traces. It is a counter table in the local SQLite file.
+
 ## Retrieval quality (measured, v4)
 
 All numbers: offline, LLM and embeddings off, k = 3, synthetic data, one script (`scripts/quality_eval.py`) run on the baseline commit (07a626f) and on the final code. Wilson intervals are in `reports/*.json`; the sets are small.
@@ -104,7 +142,7 @@ What this says honestly: the system is **safer** (wrong answers to unanswerable 
 
 ## Safety model
 
-- Local only: the adapter accepts `http://localhost|127.0.0.1` and nothing else, ignores system proxies and refuses redirects. No paid API, no public write endpoint, no autonomous publishing; every draft is `DRAFT_REQUIRES_HUMAN_APPROVAL`.
+- Local only: the adapter accepts `http://localhost|127.0.0.1` and nothing else, ignores system proxies and refuses redirects. No paid API, no autonomous publishing, and **one** write endpoint, the document upload, which has no authentication: bind to localhost and keep `DOC_UPLOAD_ENABLED=off` anywhere else; every draft is `DRAFT_REQUIRES_HUMAN_APPROVAL`.
 - Documents and user text are treated as untrusted. The LLM sees an explicit `num_ctx`, and responses report how close the prompt came to the window.
 - **Every LLM answer is validated, then falls back to source passages if rejected.** The validator checks citation IDs, numbers present in the *cited* sources, promises (free shipping, cures, "best price"…) that no source affirms, and answers that affirm what a source negates ("not eligible for return").
 - **These guards are sentence-level pattern matching. They do not detect hallucination in general**; a fluent wrong sentence without numbers or listed phrases can pass.
@@ -112,7 +150,7 @@ What this says honestly: the system is **safer** (wrong answers to unanswerable 
 
 ## API
 
-`GET /api/health[?probe=true]` · `GET /api/documents` · `GET /api/products` · `POST /api/chat` · `POST /api/campaign` · `POST /api/support/triage` · `POST /api/agent` · `GET /api/evaluation` · `GET /api/metrics`. Embedding indexing is CLI-only (`/api/admin/index-embeddings` returns 403).
+`GET /api/health[?probe=true]` · `GET /api/documents` · `POST /api/documents/upload?filename=…` · `GET /api/documents/files` · `GET /api/products` · `POST /api/chat` · `POST /api/campaign` · `POST /api/support/triage` · `POST /api/agent` · `GET /api/evaluation` · `GET /api/metrics`. Embedding indexing is CLI-only (`/api/admin/index-embeddings` returns 403).
 
 ## Known limitations
 
@@ -121,7 +159,18 @@ What this says honestly: the system is **safer** (wrong answers to unanswerable 
 - Follow-ups remember only the previous answer, and only in the browser tab (reload = new conversation); the unaccented pronoun "no" is not recognised.
 - Evaluation sets are small and written by one person; the relevance gate was tuned on the dev set; dev and holdout share an author and some vocabulary.
 - No authentication, rate limiting or tenant isolation: run on localhost only. Docker cannot reach a host Ollama by design.
-- No parsing of PDF/HTML; CSV/TXT/MD import via CLI only.
+- Documents: text-based PDF and UTF-8 TXT only. **No OCR**: a scanned PDF is refused, not guessed. No DOCX/HTML, no tables or layout understanding (a table is read as running text, multi-column pages may interleave), headers/footers other than lone page numbers are not removed. CSV/MD import stays CLI-only. The same file name replaces the earlier upload.
+- Monitoring is demo level (counters in SQLite, no percentiles or alerts). Token numbers are estimates unless the provider reported them.
+- The retrieval benchmark (Hit@3 and out-of-scope rejection) measures document retrieval on synthetic data. It is **not** end-to-end LLM answer accuracy, and it does not cover uploaded documents.
+
+## Interview architecture notes
+
+- **Two ways in, one gate.** Knowledge enters by CLI (`scripts/ingest`: CSV/MD/TXT) or by upload (`app/documents.py`: TXT/PDF). Both end in `Store.apply`: one transaction updates `documents`, the FTS5 index and sentence spans together and bumps `corpus_version`, so the vocabulary, typo repair and caches follow without a restart. Uploaded chunks are ordinary rows with provenance columns, so retrieval, the evidence gate and the answer code needed no special case; only the citation text learned to print file/page/chunk.
+- **Why chunk by sentence, per page, with overlap.** A fact that straddles a boundary survives whole in one chunk; a chunk never mixes pages, so "trang 2" in a citation is exact; the size is a setting because the right size depends on the documents (measure, do not guess).
+- **Idempotent by design.** The chunk id is a hash of the file *name* plus the chunk number; re-uploading replaces instead of duplicating, and a failed parse writes nothing.
+- **Failure is explicit.** Unsupported type 415, too large 413, unreadable / scanned / encrypted 422, disabled 403. Embedding failure never fails the upload: the file stays searchable by BM25 and the response states the degraded mode.
+- **Monitoring answers "is the pipeline healthy?" not "is the answer right?".** It counts requests, failures, retrieval and total latency, model calls and token estimates. Answer quality is a separate question (see the evaluation sections); a fast, successful request can still be a wrong answer.
+- **What I would add next, and why it is not here.** OCR (needs a model/service and its own evaluation), DOCX/HTML parsers, auth plus per-user collections before any shared deployment, percentile latency and alerting once there is traffic worth alerting on, and a held-out question set for uploaded documents.
 
 ## Repository map
 
@@ -129,4 +178,4 @@ What this says honestly: the system is **safer** (wrong answers to unanswerable 
 
 ## Job-description mapping (honest)
 
-Python/REST/DB ✅ · RAG parsing + retrieval ✅ (lexical + gate; embeddings tried on dev data, negative result, off) · ingestion update/delete ✅ · LLM API integration 🟡 (Ollama and Gemini adapters, mock-tested; one pre-v4 smoke run) · output evaluation ✅ for retrieval (baseline vs final, dev/holdout/fresh), ❌ for answer faithfulness · agent/loop 🟡 (mock-tested) · FastAPI/Docker/CI ✅ files + offline CI · LangChain/LangGraph/vector DBs/Platform APIs ❌.
+Python/REST/DB ✅ · RAG parsing + retrieval ✅ (lexical + gate; embeddings tried on dev data, negative result, off) · ingestion update/delete ✅ · document ingestion (TXT, text-based PDF → chunks with file/page metadata → index) ✅, scanned PDF/OCR ❌ · pipeline monitoring 🟡 (demo-level counters) · LLM API integration 🟡 (Ollama and Gemini adapters, mock-tested; one pre-v4 smoke run) · output evaluation ✅ for retrieval (baseline vs final, dev/holdout/fresh), ❌ for answer faithfulness · agent/loop 🟡 (mock-tested) · FastAPI/Docker/CI ✅ files + offline CI · LangChain/LangGraph/vector DBs/Platform APIs ❌.

@@ -75,10 +75,19 @@ _CONDITION_NOTE = {
 }
 
 
+def _location(source):
+    """Which uploaded file, page and chunk a source came from; empty for seed/catalogue documents."""
+    if not source.get("filename"):
+        return ""
+    page = f", trang {source['page']}" if source.get("page") else ""
+    return f"{source['filename']}{page}, đoạn {source['chunk_index']}"
+
+
 def _extractive_answer(sources, prefix):
     # Several results are numbered in the order of the sources panel, so "cái thứ hai" has something to point at.
     return prefix + "\n" + "\n".join(
-        f"{f'{i}. ' if len(sources) > 1 else ''}[{s['id']}]{_CONDITION_NOTE.get(s.get('condition_status'), '')} "
+        f"{f'{i}. ' if len(sources) > 1 else ''}[{s['id']}]{_CONDITION_NOTE.get(s.get('condition_status'), '')}"
+        f"{f' (nguồn: {_location(s)})' if _location(s) else ''} "
         f"{_excerpt(s['content'])}" for i, s in enumerate(sources, 1))
 
 
@@ -114,9 +123,12 @@ def question_answer(store, settings, question, turn_context=None):
         query_trace.update(analysis.trace())
         return _clarification(store, settings, question, start, resolution.options, query_trace)
     bound = store.document(resolution.doc_id) if resolution.action == "bound" else None
+    retrieval_start = time.perf_counter()
     sources, search_mode = search(store, settings, question, k=3, trace=query_trace,
                                   only=[bound["id"]] if bound else None)
+    retrieval_ms = round((time.perf_counter() - retrieval_start) * 1000)
     tokens_in = tokens_out = 0
+    llm_calls = 0               # attempts, including those that failed (monitoring)
     model_called = False
     evidence_checked = False
     verification_info = None
@@ -135,6 +147,7 @@ def question_answer(store, settings, question, turn_context=None):
                 if by_meaning:
                     # Found by meaning = relevant, not proven to state what was asked. The model must return the supporting
                     # sentence; the CODE checks it (verification.py). Anything unverified is a refusal with no source.
+                    llm_calls += 1
                     reply, tokens_in, tokens_out = ollama_chat(settings, SYSTEM,
                         f"TÀI LIỆU THAM KHẢO:\n{context}\n\nCÂU HỎI: {question}{about}\n\n{verification.INSTRUCTIONS}", json_output=True)
                     model_called = evidence_checked = True
@@ -146,6 +159,7 @@ def question_answer(store, settings, question, turn_context=None):
                         answer = "Tôi chưa có đủ thông tin trong tài liệu để xác nhận. Vui lòng liên hệ nhân viên phụ trách."
                         mode, sources = "llm_insufficient_evidence", []
                 else:
+                    llm_calls += 1
                     candidate, tokens_in, tokens_out = ollama_chat(settings, SYSTEM,
                         f"TÀI LIỆU THAM KHẢO:\n{context}\n\nCÂU HỎI: {question}{about}\n\n"
                         "Chỉ được trích mã nguồn trong tài liệu dưới dạng [ID]. Nếu không chắc chắn, nói không đủ thông tin.")
@@ -169,13 +183,16 @@ def question_answer(store, settings, question, turn_context=None):
     if bound:
         # Say how the pointer was read, so a wrong reading is visible and can be corrected.
         answer = f"Mình hiểu bạn đang hỏi về «{bound['title']}» [{bound['id']}] (mục vừa nhắc ở lượt trước).\n{answer}"
+    files = list(dict.fromkeys(_location(s) for s in sources if _location(s)))
+    if mode == "llm_rag_cited" and files:
+        answer += "\nNguồn tệp: " + "; ".join(files)      # written by code from metadata, not by the model
     ms = round((time.perf_counter()-start)*1000)
     if not model_called:
         tokens_in = token_estimate(question + " ".join(s["content"] for s in sources)) if sources else 0
         tokens_out = token_estimate(answer)
-    store.log("chat", mode, ms, tokens_in, tokens_out)
+    store.log("chat", mode, ms, tokens_in, tokens_out, retrieval_ms=retrieval_ms, llm_calls=llm_calls)
     return {"answer":answer,"mode":mode,"retrieval_mode":search_mode,"sources":sources,
-            "latency_ms":ms,"tokens_in":tokens_in,"tokens_out":tokens_out,
+            "latency_ms":ms,"retrieval_ms":retrieval_ms,"tokens_in":tokens_in,"tokens_out":tokens_out,
             "query_trace":query_trace,
             "verification":verification_info,
             "citation_ids_checked":evidence_checked,
@@ -235,7 +252,7 @@ def campaign_draft(store, settings, sku, audience):
     elapsed=round((time.perf_counter()-start)*1000)
     if not model_called and mode!="template_llm_unavailable":
         tin=token_estimate(doc['content']+audience);tout=token_estimate(result['body'])
-    store.log("campaign",mode,elapsed,tin,tout)
+    store.log("campaign",mode,elapsed,tin,tout,llm_calls=int(llm_enabled(settings)))
     return {**result,"status":"DRAFT_REQUIRES_HUMAN_APPROVAL","product_source":doc['id'],
             "mode":mode,"audience_used":audience_used,"llm":llm_info(settings) if model_called else None,"tokens_in":tin,"tokens_out":tout,"latency_ms":elapsed}
 

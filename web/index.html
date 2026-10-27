@@ -191,6 +191,28 @@
                 </div>
               </div>
             </div>
+            <div class="panel cases-panel">
+              <div class="panel-header">
+                <div><strong>Tài liệu đã nạp</strong><small>Tệp .txt (UTF-8) hoặc .pdf có lớp văn bản · không OCR · chỉ dùng cục bộ</small>
+                </div><span class="chip neutral" id="doc-count">0 tệp</span>
+              </div>
+              <form id="upload-form" class="form-body">
+                <label for="doc-file">CHỌN TỆP ĐỂ NẠP VÀO KHO TRI THỨC</label>
+                <input id="doc-file" type="file" accept=".txt,.pdf,text/plain,application/pdf" required/>
+                <div class="form-hint" id="upload-status">Tệp được làm sạch, tách đoạn có chồng lấn và lập chỉ mục. Câu trả lời ghi rõ tệp, trang và đoạn nguồn. Nạp lại cùng tên tệp sẽ thay thế bản cũ.</div>
+                <button type="submit" class="btn primary" id="upload-btn">Nạp tài liệu <span>↑</span></button>
+              </form>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Tệp</th><th>Trang</th><th>Đoạn</th><th>Có vector</th><th>Nạp lúc</th></tr>
+                  </thead>
+                  <tbody id="doc-files">
+                    <tr><td colspan="5" class="muted empty-row">Chưa có tệp nào được nạp.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </section>
           <section class="page hidden" id="page-support">
             <div class="page-heading"><span class="eyebrow dark">MÔ-ĐUN / GIÁ TRỊ NGHIỆP VỤ</span>
@@ -327,13 +349,21 @@
               <div class="panel metric-panel"><span class="eyebrow dark">QUAN SÁT / TỔNG HỢP</span>
                 <div class="metric-line"><span>Yêu cầu được ghi nhận</span><strong id="metric-calls">—</strong>
                 </div>
+                <div class="metric-line"><span>Thành công / thất bại</span><strong id="metric-ok">—</strong>
+                </div>
                 <div class="metric-line"><span>Độ trễ trung bình</span><strong id="metric-latency">—</strong>
+                </div>
+                <div class="metric-line"><span>Độ trễ truy xuất trung bình</span><strong id="metric-retrieval">—</strong>
+                </div>
+                <div class="metric-line"><span>Lần gọi LLM / LLM không khả dụng</span><strong id="metric-llm">—</strong>
+                </div>
+                <div class="metric-line"><span>Yêu cầu gần nhất</span><strong id="metric-last">—</strong>
                 </div>
                 <div class="metric-line"><span>Token đầu vào / ước lượng</span><strong id="metric-in">—</strong>
                 </div>
                 <div class="metric-line"><span>Token đầu ra / ước lượng</span><strong id="metric-out">—</strong>
                 </div>
-                <p>Lưu số token tổng hợp, không lưu câu hỏi. Ở chế độ trích xuất, token chỉ là phép ước lượng theo ký tự/3.</p>
+                <p>Lưu số đếm và thời gian, không lưu câu hỏi. Ở chế độ trích xuất, token chỉ là phép ước lượng theo ký tự/3. Giám sát ở mức demo (SQLite cục bộ), không phải hệ thống giám sát production.</p>
               </div>
             </div>
             <div class="panel cases-panel">
