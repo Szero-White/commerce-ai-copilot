@@ -150,3 +150,33 @@ Editing note: append with the Edit tool (UTF-8); PowerShell `Add-Content` mangle
 - Until the owner runs it: semantic retrieval = designed and unit-tested with synthetic vectors, **NOT VERIFIED** with real
   embeddings; hybrid stays OFF. Phases 8-11 that depend on the outcome (freeze, fresh data, final session) wait for it.
 - Full suite: 334 passed.
+
+### Phase 7 result — B1 was run by the owner (19 requests, 151 texts, no 429); analysed from the cache, no further API call
+Status: **hybrid NOT enabled (pre-registered rule not met). Semantic retrieval: tested on dev only, negative result, NOT VERIFIED for use.**
+- Diagnosis (cache only, `reports/b1_embedding_dev_run1.json` = analysis before the fix, `b1_embedding_dev.json` = after):
+  1. The embedding itself works as a ranker: for all **8/8 synonym_need questions the expected document is rank 1 of 15** (scores
+     0.656-0.761, runner-up lead 0.012-0.184).
+  2. `(lexical + extra)[:k]` does NOT push semantic results out: with every threshold removed the expected document is returned
+     first in 8/8 (lexical is empty for these questions, so there is nothing ahead of them).
+  3. The hard gate does NOT block the positives: the expected document passes it in 8/8. It only blocks negatives (names, codes,
+     numbers, stock): removing it adds 3 leaks, the only clause with a measured effect.
+  4. Why zero hits were admitted: the absolute similarity of negatives overlaps the positives (best score of an unsupported
+     question 0.608-0.816, median 0.716; of the expected document 0.567-0.855, median 0.727). Several negatives were questions
+     about data the catalogue does not hold (promotion, stock/availability, order or phone data, refund requests) for a product
+     that exists, so meaning-wise they are very close to its document.
+- Real algorithmic gap found and fixed (general, in the gate, also protects the lexical path): "data classes" a catalogue of
+  descriptions cannot answer unless a document states them. `stock` (now also "trong kho", "hàng mới về"), `offer` (needs a
+  discount word with a figure next to it in the document), `private` (order status, phone/address of customers, refunds,
+  cancellations: only policy/operations documents may answer). Language cues only, no product names. Unit tests:
+  `tests/test_data_classes.py`. Lexical results unchanged (dev 39/52, leaks 0/10, near-miss 0/12, legacy identical).
+- After the fix, over the grid (zero-leak and stable-plateau required): best = tau 0.70 / span 0.70 / z 4 / delta 0.03 / gap
+  0.02 -> 42/52 hits, 0 leaks, synonym_need **1/8 (+12.5 points < the 15 required)**; rule unmet: (a) gain, and (c) no measured
+  effect of tau/z/span/delta/gap on dev leaks (on dev the hard gate alone keeps the negatives out).
+- NOT done on purpose: finer thresholds. A zero-leak point admitting 2/8 exists (e.g. similarity between 0.708 and 0.722) but the
+  margin is 0.014 between a near-miss ("Có đèn bàn chạy bằng pin không?", 0.708) and a true match (0.722): that would be fitting
+  noise in 65 cases. The plateau requirement exists to prevent exactly this. Meaning-only matches also cannot tell "the right
+  product, but the attribute asked for is missing" from "the right product for this need": both look equally relevant.
+- Practical conclusion: semantic ranking is useful (rank 1 in 8/8) but not as an admission rule. If it is ever used, the safe role
+  is re-ranking already admitted documents, which `retrieval.search` already does when embeddings are enabled. Hybrid stays OFF
+  by default; no B2 is needed. Phase 8-11 continue with the lexical system.
+- Full suite: 350 passed.

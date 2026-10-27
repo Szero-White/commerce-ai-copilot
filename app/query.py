@@ -60,16 +60,41 @@ CATALOG_PAIRS = {("san", "pham"), ("mat", "hang"), ("hang", "hoa")}
 CATALOG_WORDS = {"product", "products", "catalog", "catalogue", "items"}
 # A question about stock asks for a stored figure. A catalogue of descriptions that never gives one cannot answer it,
 # however many other words of the question (product name, size) the description happens to share.
-STOCK_PAIRS = {("con", "hang"), ("het", "hang"), ("ton", "kho")}
-STOCK_WORDS = {"stock", "inventory"}   # not "available": "which sizes are available?" asks for a list, not a figure
+# The same holds for offers (a stated discount or code), and for private data or actions on an order, which a public
+# assistant must only explain by POLICY, never perform or look up. Phrases are folded words, matched as a sequence; they
+# are language cues, not product names. ("available" is deliberately not a stock cue: "which sizes are available?" asks
+# for a list, not a figure.)
+DATA_PHRASES = {
+    "stock": [("con", "hang"), ("het", "hang"), ("ton", "kho"), ("trong", "kho"), ("hang", "moi", "ve"), ("stock",),
+              ("inventory",), ("restock",), ("sold", "out")],
+    "offer": [("khuyen", "mai"), ("giam", "gia"), ("uu", "dai"), ("tang", "kem"), ("ma", "giam"), ("voucher",), ("coupon",),
+              ("discount",), ("promo",), ("promotion",), ("sale",), ("freeship",), ("free", "ship"), ("black", "friday")],
+    "private": [("don", "hang", "cua", "toi"), ("trang", "thai", "don"), ("so", "dien", "thoai"), ("dia", "chi", "cua", "khach"),
+                ("thong", "tin", "khach"), ("order", "status"), ("track", "my", "order"), ("my", "order"),
+                ("hoan", "tien", "cho"), ("huy", "don"), ("xac", "nhan", "don"), ("refund", "me"), ("cancel", "my", "order")],
+}
+POLICY_CATEGORIES = {"policy", "operations"}   # documents that describe rules and procedures rather than hold data
 STOCK_CUES_IN_DOCS = {"stock", "inventory", "kho", "ton"}
+OFFER_CUES_IN_DOCS = {"giam", "khuyen", "uu", "tang", "discount", "sale", "voucher", "coupon", "off", "promo"}
+
+
+def asks_for(kind: str, folded: list[str]) -> bool:
+    return any(tuple(folded[i:i + len(p)]) == p for p in DATA_PHRASES[kind] for i in range(len(folded) - len(p) + 1))
+
+
+def _near_number(tokens: list[str], cues, window: int) -> bool:
+    return any(t in cues and any(tokens[j].isdigit() for j in range(max(0, i - window), min(len(tokens), i + window + 1)))
+               for i, t in enumerate(tokens))
 
 
 def states_stock(tokens: list[str], window: int = 3) -> bool:
     """True when a document gives a stock figure: a stock word with a number right next to it."""
-    return any(t in STOCK_CUES_IN_DOCS and any(
-        tokens[j].isdigit() for j in range(max(0, i - window), min(len(tokens), i + window + 1)))
-        for i, t in enumerate(tokens))
+    return _near_number(tokens, STOCK_CUES_IN_DOCS, window)
+
+
+def states_offer(tokens: list[str], window: int = 4) -> bool:
+    """True when a document states a concrete offer: a discount word with a number (a rate or an amount) close to it."""
+    return _near_number(tokens, OFFER_CUES_IN_DOCS, window)
 
 
 # "It", "that one", "the second one": words that point at something said before. A question made only of such a pointer
@@ -228,6 +253,8 @@ class Analysis:
     catalog: bool = False
     promoted: bool = False
     asks_stock: bool = False
+    asks_offer: bool = False                              # "any discount?": needs a stated offer in the document
+    asks_private: bool = False                            # order status, phone numbers, refunds: policy documents only
     needs_referent: bool = False                          # "how much is that one?": the subject is only a pointer
     pointer: tuple | None = None                          # ('pronoun', None) | ('ordinal', n) found in the question
     names: list[str] = field(default_factory=list)       # unknown proper names / model codes in the question
@@ -237,6 +264,7 @@ class Analysis:
     def trace(self) -> dict:
         return {"terms": self.terms, "soft_terms": self.soft, "corrections": self.corrections,
                 "dropped": [w for w, _ in self.dropped], "asks_stock": self.asks_stock,
+                "asks_offer": self.asks_offer, "asks_private": self.asks_private,
                 "needs_referent": self.needs_referent, "pointer": list(self.pointer) if self.pointer else None,
                 "names": self.names, "quantities": [f"{q.value:g} {q.unit}" for q in self.quantities],
                 "conditions": [c.text for c in self.conditions],
@@ -300,8 +328,9 @@ def analyze(query: str, lexicon: Lexicon) -> Analysis:
     result.catalog = (any(p in CATALOG_PAIRS for p in zip(folded_all, folded_all[1:]))
                       or any(f in CATALOG_WORDS for f in folded_all))
     result.discovery = any(f in DISCOVERY_FOLDED or r in DISCOVERY_RAW for r, f, _ in items)
-    result.asks_stock = (any(p in STOCK_PAIRS for p in zip(folded_all, folded_all[1:]))
-                         or any(f in STOCK_WORDS for f in folded_all))
+    result.asks_stock = asks_for("stock", folded_all)
+    result.asks_offer = asks_for("offer", folded_all)
+    result.asks_private = asks_for("private", folded_all)
     letters = [c for c in query if c.isalpha()]
     shouting = bool(letters) and all(c.isupper() for c in letters)
     fixes = 0

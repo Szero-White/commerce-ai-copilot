@@ -100,7 +100,7 @@ class CaseContext:
         self.hard = {}
         for d in self.docs:
             text = d["title"] + " " + d["content"]
-            self.hard[d["id"]] = check_document(self.analysis, text, normalize(text).split()).admitted
+            self.hard[d["id"]] = check_document(self.analysis, text, normalize(text).split(), d["category"]).admitted
 
 
 def decide_case(ctx, params, clauses=("tau", "z", "span", "delta", "gap", "hard"), k=3):

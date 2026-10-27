@@ -13,7 +13,7 @@ import statistics
 from dataclasses import dataclass
 
 from .quantities import evaluate, exact_matches
-from .query import states_stock
+from .query import POLICY_CATEGORIES, states_offer, states_stock
 
 
 @dataclass(frozen=True)
@@ -23,9 +23,13 @@ class Verdict:
     reason: str = ""
 
 
-def check_document(analysis, text: str, tokens: list[str]) -> Verdict:
+def check_document(analysis, text: str, tokens: list[str], category: str | None = None) -> Verdict:
     """Hard constraints taken from the question; independent of how the document was found."""
     present = set(tokens)
+    if analysis.asks_private and category is not None and category not in POLICY_CATEGORIES:
+        return Verdict(False, reason="private data or an action on an order was asked: only policy documents may answer")
+    if analysis.asks_offer and not states_offer(tokens):
+        return Verdict(False, reason="an offer was asked and the document states none")
     if any(name not in present for name in analysis.names):
         return Verdict(False, reason="a name or model code in the question is not in the document")
     if any(any(c.isdigit() for c in t) and t not in present for t in analysis.terms):

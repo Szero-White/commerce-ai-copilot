@@ -290,7 +290,7 @@ class Store:
         found, rejected = [], {}
         for doc in products:
             text = doc["title"] + " " + doc["content"]
-            verdict = check_document(analysis, text, normalize(text).split())
+            verdict = check_document(analysis, text, normalize(text).split(), doc["category"])
             if not verdict.admitted:
                 rejected[doc["id"]] = verdict.reason
                 continue
@@ -312,7 +312,7 @@ class Store:
             if not doc:
                 continue
             text = doc["title"] + " " + doc["content"]
-            verdict = check_document(analysis, text, normalize(text).split())
+            verdict = check_document(analysis, text, normalize(text).split(), doc["category"])
             if verdict.admitted:
                 found.append({**doc, **({"condition_status": verdict.condition} if verdict.condition else {})})
         return found
@@ -373,7 +373,7 @@ class Store:
                     continue
                 if not _near({t: where[t] for t in hits if not t.isdigit()}):
                     continue
-                verdict = check_document(analysis, text, tokens)
+                verdict = check_document(analysis, text, tokens, doc["category"])
                 if not verdict.admitted:
                     rejected[doc["id"]] = verdict.reason
                     continue
