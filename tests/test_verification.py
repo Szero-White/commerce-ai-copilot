@@ -44,6 +44,30 @@ def test_an_unsupported_answer_is_refused_with_a_reason(kw, reason):
     assert not ok and why == reason and text == ""
 
 
+def test_the_digits_of_a_valid_citation_are_not_product_data():
+    # Real Gemini reply: the answer ended with its own "[PRD-103]"; its digits were read as a number missing from the quote.
+    doc = {**DOC, "id": "PRD-103"}
+    own = "Sản phẩm Đèn Lumi có ba mức sáng phù hợp với nhu cầu sử dụng [PRD-103]."
+    r = verify(reply(source_id="PRD-103", answer=own), [doc], "Có gì hợp để học khuya không?")
+    assert r.ok, r.reason
+    assert r.text.count("[PRD-103]") == 1 and "[PRD-103]" in r.text            # appended exactly once, by the code
+    assert verify(reply(source_id="PRD-103", answer=own.replace("[PRD-103]", "[prd-103]")), [doc])[0] is True
+    assert verify(reply(source_id="PRD-103", answer=own.replace(".", "") + " [PRD-103, PRD-103]"), [doc])[0] is True
+
+
+def test_a_citation_naming_another_source_is_refused_and_real_numbers_are_still_checked():
+    doc = {**DOC, "id": "PRD-103"}
+    wrong = verify(reply(source_id="PRD-103", answer="Đèn Lumi có ba mức sáng [PRD-104]"), [doc])
+    assert not wrong.ok and wrong.reason == "a citation in the answer is not the source of the verdict"
+    mixed = verify(reply(source_id="PRD-103", answer="Đèn Lumi có ba mức sáng [PRD-103, POL-001]"), [doc])
+    assert not mixed.ok and mixed.reason == "a citation in the answer is not the source of the verdict"
+    # the citation is removed, the content is not: a price or a spec that the quote lacks still fails
+    for claim in ("Đèn Lumi giá 390.000 VND [PRD-103]", "Đèn Lumi có 3 mức sáng [PRD-103]", "Đèn Lumi dùng nguồn 12V [PRD-103]"):
+        r = verify(reply(source_id="PRD-103", answer=claim), [doc])
+        assert not r.ok and r.reason == "a number in the answer is not in the quoted sentence", claim
+    assert verify(reply(source_id="PRD-103", answer="Đèn Lumi dùng nguồn USB-C 5V [PRD-103]"), [doc])[0] is True
+
+
 NEED = "Tối nào cũng học khuya mà đèn trong phòng yếu quá, có gì hợp không?"
 
 

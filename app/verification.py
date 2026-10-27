@@ -17,7 +17,7 @@ import json
 import re
 from typing import NamedTuple
 
-from .evidence import valid_cited_answer
+from .evidence import _CITE, citation_ids, valid_cited_answer
 from .storage import normalize
 
 MIN_QUOTE_CHARS = 12
@@ -96,6 +96,11 @@ def verify(reply: str, sources: list[dict], question: str = "") -> Result:
         return refuse("source id is not one of the documents")
     if len(quote) < MIN_QUOTE_CHARS or _fold(quote) not in _fold(source["title"] + " " + source["content"]):
         return refuse("the quoted sentence is not in the document", source, quote)
+    # A citation tag in the answer is a label, not a claim. It must name exactly the source of the verdict; the well-formed tags
+    # are then removed (digits of "[PRD-103]" are not product data) and the CODE appends the one citation shown to the user.
+    if any(c.lower() != source["id"].lower() for c in citation_ids(answer)):
+        return refuse("a citation in the answer is not the source of the verdict", source, quote)
+    answer = " ".join(_CITE.sub(" ", answer).split())
     if not answer or len(answer) > MAX_ANSWER_CHARS:
         return refuse("no usable answer", source, quote)
     if _numbers(answer) - _numbers(quote):

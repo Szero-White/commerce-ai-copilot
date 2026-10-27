@@ -316,6 +316,10 @@ PASSED. Fixes: ids are normalised (brackets/case/space); every content word of t
 connective list, otherwise a recommendation is reduced to a code-written sentence stating only the quote, and a fact answer is refused. NEW diagnostics:
 `/api/chat` returns `verification` {decision, kind, source_id, quote, reason, reply_excerpt, unsupported_words} (no key, no prompt; null for answers not found by meaning),
 and `blind_eval` records it. Next step for the owner: ask the lamp question again and read `verification.reason` / `reply_excerpt`; do not tune anything before that.
+**Cause of the live refusal, read from real Gemini via `verification`:** the reply was valid (decision answer, kind recommendation, source PRD-103, real quote) but the answer
+ended with its own "[PRD-103]" and the number check read "103" as a product figure absent from the quote. Fix (`verification.py`): citation tags in the answer must name exactly the
+verdict's source (case-insensitive; any other id is refused), well-formed tags are then removed before the number / word checks, and the code appends the single citation. Prices,
+specs and other numbers are still checked. Regression tests use the real reply shape.
 **What is NOT fixable lexically, and what is missing to verify semantic retrieval:** 25/25 `synonym_need` still 0 (plus most remaining policy paraphrases:
 "nộp", "đổi ý", "thanh toán sau lúc giao"): the question shares no words with the document. B1 (dev, 151 texts) showed the right
 document ranks first but absolute similarity cannot separate it from unanswerable questions. Missing: (1) an embedding run on THIS trial
