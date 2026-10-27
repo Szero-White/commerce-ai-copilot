@@ -33,9 +33,17 @@ def index_vectors(store, settings):
 
 
 def search(store, settings, query, k=3, trace=None):
+    """Documents that passed the evidence gate, ranked. Semantic scores only re-rank them.
+
+    Admission is decided by the gate (`Store.fts_search` -> `gate.check_document`), never by a similarity score: a
+    document found only by its vector would skip every check on numbers, names and stock. `gate.admit_semantic`
+    describes when such a document could be admitted; it is not wired in until sentence vectors exist and the
+    thresholds have been measured on real embeddings.
+    """
     lexical = store.fts_search(query, limit=15, trace=trace)
     ranking = {}
-    documents = {d["id"]: d for d in store.documents()}
+    admitted = {d["id"]: d for d in lexical}
+    documents = admitted
     for rank, d in enumerate(lexical, 1):
         ranking[d["id"]] = ranking.get(d["id"], 0.0) + 1/(40+rank)
     semantic_active = False
@@ -43,7 +51,7 @@ def search(store, settings, query, k=3, trace=None):
         try:
             query_vector = embed(settings, [query])[0]
             semantic = []
-            for d in documents.values():
+            for d in admitted.values():
                 if d.get("embedding_json") and d.get("embedding_model") == settings.embedding_model:
                     try:
                         vector = json.loads(d["embedding_json"])
@@ -55,12 +63,18 @@ def search(store, settings, query, k=3, trace=None):
                     if math.isfinite(score) and score >= 0.38:
                         semantic.append((score, d["id"]))
             semantic.sort(reverse=True)
-            semantic_active = bool(semantic)
+            semantic_active = bool(semantic)   # vectors of admitted documents took part in the ranking
             for rank, (_, did) in enumerate(semantic[:15], 1):
                 ranking[did] = ranking.get(did, 0.0) + 1/(40+rank)
         except ModelUnavailable:
             pass  # Explicit degraded mode, revealed in API response.
-    ranked = sorted(ranking, key=lambda did: ranking[did], reverse=True)[:k]
-    return [{"id": did,"title":documents[did]["title"],"category":documents[did]["category"],
-             "content":documents[did]["content"],"score":round(ranking[did],4)} for did in ranked], (
-             "hybrid" if semantic_active else "lexical")
+    # A comparison that could not be confirmed never outranks one that was.
+    ranked = sorted(ranking, key=lambda did: (documents[did].get("condition_status") == "unverified", -ranking[did]))[:k]
+    results = []
+    for did in ranked:
+        item = {"id": did, "title": documents[did]["title"], "category": documents[did]["category"],
+                "content": documents[did]["content"], "score": round(ranking[did], 4)}
+        if documents[did].get("condition_status"):
+            item["condition_status"] = documents[did]["condition_status"]
+        results.append(item)
+    return results, ("hybrid" if semantic_active else "lexical")

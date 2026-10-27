@@ -10,6 +10,8 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
+from .quantities import extract, parse_conditions
+
 MAX_TERMS = 10
 # Typo repair is only attempted when few words need it, otherwise the query is probably not about this catalogue.
 MAX_CORRECTIONS = 2
@@ -31,7 +33,7 @@ giup xem tim san pham loai hang lau may nhu nay hom muon xin mua tren cac nhung 
 hoac neu thi de di ra vao what is the a an of in do you can i how much are there for to who tell me
 it be on at by with and or my your we this that does did will would should could any some about
 dau ap dung phai come get have has was were if because when while from just
-vay nhe nhi oi ha nha hen shop ben theo""".split())
+vay nhe nhi oi ha nha hen shop ben theo mon cai chiec no kia sao""".split())
 
 # Function words that are ALSO spellings of content words once diacritics are dropped. The value lists the readings
 # (as typed, with diacritics) in which the word really is a function word. A word typed with diacritics that is not
@@ -46,7 +48,7 @@ FUNCTION_FORMS = {
     "nhu": {"như"}, "nay": {"này", "nay"}, "hom": {"hôm"}, "muon": {"muốn"}, "tren": {"trên"}, "cac": {"các"},
     "nhung": {"những", "nhưng"}, "se": {"sẽ"}, "rat": {"rất"}, "qua": {"quá"}, "hoac": {"hoặc"}, "neu": {"nếu"},
     "thi": {"thì"}, "di": {"đi"}, "vao": {"vào"}, "phai": {"phải"}, "ap": {"áp"}, "va": {"và"}, "la": {"là"},
-    "vay": {"vậy"}, "nhe": {"nhé"}, "nhi": {"nhỉ"}, "oi": {"ơi"}, "ben": {"bên"}, "bao": {"bao"},
+    "vay": {"vậy"}, "nhe": {"nhé"}, "nhi": {"nhỉ"}, "oi": {"ơi"}, "ben": {"bên"}, "bao": {"bao"}, "mon": {"món"}, "cai": {"cái"}, "chiec": {"chiếc"}, "no": {"nó", "no"},
 }
 # Accented question words whose unaccented spelling is a product word (tủ, đèn, tải).
 STOP_ACCENTED = {"mất", "từ", "đến", "tại"}
@@ -68,6 +70,30 @@ def states_stock(tokens: list[str], window: int = 3) -> bool:
     return any(t in STOCK_CUES_IN_DOCS and any(
         tokens[j].isdigit() for j in range(max(0, i - window), min(len(tokens), i + window + 1)))
         for i, t in enumerate(tokens))
+
+
+# "It", "that one", "the second one": words that point at something said before. A question made only of such a pointer
+# and an attribute ("how much is that one?") has no subject of its own; searching with just the attribute would return
+# every priced document. Without a previous turn to resolve the pointer the search must not run.
+DEICTIC_PAIRS = {("cai", "do"), ("cai", "nay"), ("cai", "kia"), ("san", "pham", "nay"), ("san", "pham", "do"),
+                 ("san", "pham", "kia"), ("mon", "nay"), ("mon", "do"), ("that", "one"), ("this", "one")}
+ORDINALS = {"hai", "ba", "bon", "nhat", "cuoi", "dau", "second", "third", "first", "last"}
+# Words that name a property of a thing rather than the thing.
+ATTRIBUTE_TERMS = {"gia", "price", "kich", "thuoc", "mau", "color", "colors", "colour", "bao", "hanh", "warranty",
+                   "chat", "lieu", "material", "size", "sizes", "rong", "dai", "cao", "day", "nang"}
+
+
+def _deictic(items) -> bool:
+    folded = [f for _, f, _ in items]
+    for n in (2, 3):
+        if any(tuple(folded[i:i + n]) in DEICTIC_PAIRS for i in range(len(folded) - n + 1)):
+            return True
+    for i, (raw, f, _) in enumerate(items):
+        if raw == "nó" or f == "kia":
+            return True
+        if raw == "thứ" and i + 1 < len(items) and items[i + 1][1] in ORDINALS:
+            return True
+    return False
 
 
 # Cues of a "what do you have?" question (used to prefer documents whose TITLE names the thing asked about).
@@ -164,10 +190,17 @@ class Analysis:
     catalog: bool = False
     promoted: bool = False
     asks_stock: bool = False
+    needs_referent: bool = False                          # "how much is that one?" with nothing said before
+    names: list[str] = field(default_factory=list)       # unknown proper names / model codes in the question
+    quantities: list = field(default_factory=list)       # numbers with units that must be stated exactly
+    conditions: list = field(default_factory=list)       # comparisons computed from the documents' numbers
 
     def trace(self) -> dict:
         return {"terms": self.terms, "soft_terms": self.soft, "corrections": self.corrections,
                 "dropped": [w for w, _ in self.dropped], "asks_stock": self.asks_stock,
+                "needs_referent": self.needs_referent,
+                "names": self.names, "quantities": [f"{q.value:g} {q.unit}" for q in self.quantities],
+                "conditions": [c.text for c in self.conditions],
                 "intent": "catalog" if self.catalog else "discovery" if self.discovery else "lookup"}
 
 
@@ -186,36 +219,54 @@ def _role(raw: str, folded: str, lexicon: Lexicon) -> str:
 
 
 def _items(query: str):
-    """(typed form, folded form) per word, with spoken aliases replaced by the form the documents use."""
+    """(typed form, folded form, as written) per word, with spoken aliases replaced by the form the documents use."""
     items = []
-    for raw in raw_tokens(query):
+    cased = re.findall(r"\w+", unicodedata.normalize("NFC", query))
+    for index, raw in enumerate(raw_tokens(query)):
+        written = cased[index] if index < len(cased) else raw
         pieces = normalize(raw).split()
-        items.extend([(raw, pieces[0])] if len(pieces) == 1 else [(p, p) for p in pieces])
-    folded = [f for _, f in items]
+        items.extend([(raw, pieces[0], written)] if len(pieces) == 1 else [(p, p, p) for p in pieces])
+    folded = [f for _, f, _ in items]
     for alias, canonical in ALIASES.items():
         words, i = alias.split(), 0
         while i <= len(folded) - len(words):
             if folded[i:i + len(words)] == words:
                 repl = canonical.split()
-                items[i:i + len(words)] = [(w, w) for w in repl]
-                folded = [f for _, f in items]
+                items[i:i + len(words)] = [(w, w, w) for w in repl]
+                folded = [f for _, f, _ in items]
                 i += len(repl)
             else:
                 i += 1
     return items
 
 
+def _looks_like_a_name(written: str, position: int, shouting: bool) -> bool:
+    """A word that names something: Capitalised inside the sentence, camelCase, or letters mixed with digits."""
+    if written.isdigit() or shouting:
+        return False
+    letters, digits = any(c.isalpha() for c in written), any(c.isdigit() for c in written)
+    if letters and digits:
+        return written[0].isalpha()     # model codes (X7, RTX3060); "120cm", "11oz", "5V" are quantities
+    return letters and ((position > 0 and written[:1].isupper() and not written.isupper())
+                        or any(c.isupper() for c in written[1:]) and not written.isupper())
+
+
 def analyze(query: str, lexicon: Lexicon) -> Analysis:
     result = Analysis()
+    # Comparison phrases ("dưới 2 triệu") are conditions to compute, not words to find: cut them out first.
+    result.conditions, query = parse_conditions(query)
+    result.quantities = extract(query)
     items = _items(query)
-    folded_all = [f for _, f in items]
+    folded_all = [f for _, f, _ in items]
     result.catalog = (any(p in CATALOG_PAIRS for p in zip(folded_all, folded_all[1:]))
                       or any(f in CATALOG_WORDS for f in folded_all))
-    result.discovery = any(f in DISCOVERY_FOLDED or r in DISCOVERY_RAW for r, f in items)
+    result.discovery = any(f in DISCOVERY_FOLDED or r in DISCOVERY_RAW for r, f, _ in items)
     result.asks_stock = (any(p in STOCK_PAIRS for p in zip(folded_all, folded_all[1:]))
                          or any(f in STOCK_WORDS for f in folded_all))
+    letters = [c for c in query if c.isalpha()]
+    shouting = bool(letters) and all(c.isupper() for c in letters)
     fixes = 0
-    for raw, folded in items:
+    for position, (raw, folded, written) in enumerate(items):
         corrected = False
         if folded not in lexicon.df and folded not in STOP and fixes < MAX_CORRECTIONS:   # correct() skips known words
             fixed = lexicon.correct(folded)
@@ -235,8 +286,13 @@ def analyze(query: str, lexicon: Lexicon) -> Analysis:
             result.terms.append(folded)
             if raw != folded and not corrected:
                 result.accented[folded] = raw
+            if (not corrected and folded not in lexicon.df and folded not in lexicon.known
+                    and _looks_like_a_name(written, position, shouting)):
+                result.names.append(folded)   # a name the catalogue has never seen: it must be matched, not guessed
+    result.names = list(dict.fromkeys(result.names))
     result.terms = list(dict.fromkeys(result.terms))[:MAX_TERMS]
     result.soft = [t for t in dict.fromkeys(result.soft) if t not in result.terms]
     if not result.terms and result.soft:
         result.terms, result.soft, result.promoted = result.soft, [], True
+    result.needs_referent = _deictic(items) and all(t in ATTRIBUTE_TERMS or t in ORDINALS or t == "hai" for t in result.terms)
     return result

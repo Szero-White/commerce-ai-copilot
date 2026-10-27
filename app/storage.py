@@ -6,8 +6,9 @@ import threading
 from pathlib import Path
 from .config import ROOT
 # Query-side vocabulary and text normalisation live in query.py; re-exported for existing importers.
+from .gate import check_document
 from .query import (ALIASES, STOP, STOP_ACCENTED, Lexicon, analyze, normalize,  # noqa: F401
-                    raw_tokens as _raw_tokens, states_stock)
+                    raw_tokens as _raw_tokens)
 
 # Domain synonyms (query term -> tokens that may carry the same meaning in the documents).
 # Generic e-commerce vocabulary, not tied to any evaluation question.
@@ -23,6 +24,16 @@ MIN_COVERAGE = 0.6
 # Two matched query terms must sit within this many tokens of each other: words scattered over
 # unrelated clauses ("điều kiện ... hòa") are coincidence, not a match.
 PROXIMITY = 8
+
+
+MAX_UNVERIFIED = 2
+
+
+def _verified_first(docs):
+    """Documents whose comparison could be confirmed come first; those it could not be confirmed for are capped."""
+    confirmed = [d for d in docs if d.get("condition_status") != "unverified"]
+    unconfirmed = [d for d in docs if d.get("condition_status") == "unverified"]
+    return confirmed + unconfirmed[:MAX_UNVERIFIED]
 
 
 def _inflectable(term: str) -> bool:
@@ -269,11 +280,23 @@ class Store:
         self._cached = (version, data)
         return data
 
-    def _catalogue(self, limit):
-        """'Which products do you sell?': no content word to match, so list product documents."""
+    def _catalogue(self, analysis, limit, trace=None):
+        """Product documents that pass the hard constraints of the question (comparisons, quantities, names)."""
         with self.connect() as cx:
-            return [dict(r) for r in cx.execute(
-                "SELECT * FROM documents WHERE category='product' ORDER BY id LIMIT ?", (limit,))]
+            products = [dict(r) for r in cx.execute("SELECT * FROM documents WHERE category='product' ORDER BY id")]
+        found, rejected = [], {}
+        for doc in products:
+            text = doc["title"] + " " + doc["content"]
+            verdict = check_document(analysis, text, normalize(text).split())
+            if not verdict.admitted:
+                rejected[doc["id"]] = verdict.reason
+                continue
+            if verdict.condition:
+                doc["condition_status"] = verdict.condition
+            found.append(doc)
+        if trace is not None and rejected:
+            trace["gate_rejected"] = rejected
+        return _verified_first(found)[:limit]
 
     def fts_search(self, query, limit=12, trace=None):
         """Lexical candidates for `query`. `trace` (a dict) receives how the question was read."""
@@ -283,8 +306,11 @@ class Store:
         if trace is not None:
             trace.update(analysis.trace())
         terms, accented = analysis.terms, analysis.accented
+        if analysis.needs_referent:
+            return []   # "that one" with no earlier turn to point at: asking which one is the caller's job
         if not terms:
-            return self._catalogue(limit) if analysis.catalog else []
+            # "Which products do you sell?" / "anything under 500k?": nothing to match by word, so look at the products.
+            return self._catalogue(analysis, limit, trace) if analysis.catalog or analysis.conditions else []
         # Words typed WITH diacritics must match with diacritics ("nhân viên" != "nhận"); only a
         # diacritic-free query word may match loosely.
         wanted = list(dict.fromkeys(w for term in terms + analysis.soft for w in (term,) + SYNONYMS.get(term, ())))
@@ -297,7 +323,7 @@ class Store:
             df = {t: sum(bool(_positions(t, d)) for d in tokenized) for t in terms}
             # Rare or unknown words carry more weight than words found in most documents.
             weight = {t: math.log(1 + len(tokenized) / ((df[t] or 0.1) + 0.1)) for t in terms}
-            filtered = []
+            filtered, rejected = [], {}
             for row in rows:
                 doc = dict(row)
                 # OR-based BM25 alone will happily return irrelevant documents sharing one word.
@@ -319,17 +345,23 @@ class Store:
                     continue
                 if not _near({t: where[t] for t in hits if not t.isdigit()}):
                     continue
-                if analysis.asks_stock and not states_stock(tokens):
-                    continue  # asked for a stock figure; this document never states one
+                verdict = check_document(analysis, text, tokens)
+                if not verdict.admitted:
+                    rejected[doc["id"]] = verdict.reason
+                    continue
+                if verdict.condition:
+                    doc["condition_status"] = verdict.condition
                 filtered.append(doc)
                 if len(filtered) >= limit:
                     break
+            if trace is not None and rejected:
+                trace["gate_rejected"] = rejected
             if analysis.discovery and len(terms) <= 2:
                 # "Which X do you have?": documents whose TITLE names X (products first) before passing mentions.
                 def names_it(doc):
                     return any(_positions(t, normalize(doc["title"]).split()) for t in terms)
                 filtered.sort(key=lambda doc: (not names_it(doc), doc["category"] != "product"))
-            return filtered
+            return _verified_first(filtered)
 
     def log(self, kind, mode, ms, input_tokens=0, output_tokens=0):
         with self._lock, self.connect() as cx:

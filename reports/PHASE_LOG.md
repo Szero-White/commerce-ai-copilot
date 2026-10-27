@@ -74,3 +74,31 @@ Editing note: append with the Edit tool (UTF-8); PowerShell `Add-Content` mangle
   after `python -m scripts.index_embeddings` (not run here: calls an API). No `valid_until`: withdrawing = deleting.
 - Not done on purpose: `doc_spans` table (arrives with the semantic work, Phase 7, if it is approved).
 - Retrieval metrics unchanged from Phase 3 (dev Hit@3 35/52, leaks 0/10, near-miss leak 1/12, legacy identical). Full suite: 258 passed.
+
+## Phase 5 — evidence gate and numeric constraints: PASS
+- New `app/quantities.py`: numbers with units (VND/USD, cm, %, days/months, oz...), comparison conditions ("dưới 2 triệu",
+  "cao hơn 70 cm", ranges), and `evaluate()` which returns yes / no / unknown **by comparing numbers found in the document
+  text** (no embedding, no LLM). "unknown" = the document gives numbers of that kind but not clearly the attribute asked
+  (USD price for a VND question; "120 x 60 cm" does not say which side is the width). No number of that kind at all = "no".
+- New `app/gate.py`: `check_document` = the hard constraints every candidate must meet (unknown names / model codes, codes and
+  numbers, quantity with unit family, stock figure, comparisons); `admit_semantic` + `SemanticParams` = when a document found
+  only by meaning could be admitted (robust z-score over all documents, lead over the runner-up only for single-answer
+  questions, group-membership and cap for list questions, a matching sentence required, hard constraints veto first).
+  Defaults are UNCALIBRATED. Embedding score, z-score and sentence match are evidence of relevance, never of truth.
+- `Store.fts_search` now calls the gate for every lexical candidate; products-only "catalogue" candidates also go through it
+  (so "Có món nào dưới 500 nghìn không?" works with no content word). Documents whose comparison could not be confirmed are
+  returned last, at most 2, flagged `condition_status: unverified`; confirmed ones are flagged `satisfied`; the extractive
+  answer and the LLM context header say so. Trace gets `gate_rejected` {id: reason}.
+- Unknown proper names (Capitalised inside the sentence, camelCase, or letter+digit model codes) must be matched; "Focus Pro",
+  "Ghế Zephyr" return nothing. Known limitation: a capitalised place or brand the catalogue has never seen also makes a
+  question unanswerable (conservative: false abstention, never a leak).
+- "That one / nó / cái thứ hai" with only an attribute word left (`needs_referent`) no longer searches (it used to return every
+  priced document); Phase 6 will resolve the pointer from the previous turn.
+- `retrieval.search`: **fixed the unsafe path** where any document with cosine >= 0.38 entered the results without any check.
+  Vectors now only re-rank documents the gate admitted. `admit_semantic` is NOT wired in: it needs sentence vectors, which do
+  not exist until the semantic experiment (Phase 7, needs permission). Consequence: with embeddings on and no span vectors,
+  hybrid mode can re-rank but not add documents; that is the safe default, and it is NOT evidence that semantic search works.
+- Measured, dev (Phase 4 in parentheses): Hit@3 39/52 (35), false abstention 13 (17), numeric_condition 4/4 (0/4), leaks 0/10 (0),
+  near-miss leaks 0/12 (1: the "Focus Pro" name case), legacy 31/31, 32/33, 18/18, 12/12 unchanged. Remaining failures are
+  synonym_need 0/8 and a few paraphrases; they need meaning, not words.
+- Full suite: 301 passed.

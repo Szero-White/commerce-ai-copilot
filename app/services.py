@@ -26,7 +26,7 @@ def _context_from_sources(sources, max_chars):
     blocks = []
     remaining = max_chars
     for source in sources:
-        header = f"[{source['id']}] {source['title']}: "
+        header = f"[{source['id']}] {source['title']}{_CONDITION_NOTE.get(source.get('condition_status'), '')}: "
         if remaining <= len(header) + 40:
             break
         available = min(len(source['content']), remaining - len(header) - 2)
@@ -63,8 +63,15 @@ def _ad_body(content):
     return " ".join(kept) if kept else content.split(".")[0].strip() + "."
 
 
+_CONDITION_NOTE = {
+    "satisfied": " (đã so sánh số trong tài liệu: thỏa điều kiện)",
+    "unverified": " (CHƯA xác nhận được điều kiện: tài liệu không nêu rõ thuộc tính này)",
+}
+
+
 def _extractive_answer(sources, prefix):
-    return prefix + "\n" + "\n".join(f"[{s['id']}] {_excerpt(s['content'])}" for s in sources)
+    return prefix + "\n" + "\n".join(
+        f"[{s['id']}]{_CONDITION_NOTE.get(s.get('condition_status'), '')} {_excerpt(s['content'])}" for s in sources)
 
 
 def question_answer(store, settings, question):
