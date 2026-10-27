@@ -29,8 +29,12 @@
 
   -SelfTest: no key prompt, no network. Uses a fake key to prove the masking and clean-up logic.
 #>
+# No positional binding: a stray value (an id after -Only, for example) must be an error, never silently become -Model.
+# Lists are written with commas:  -Docs a.json,b.csv   -Only T076,T090
+[CmdletBinding(PositionalBinding = $false)]
 param([switch]$SelfTest, [string]$Model = 'gemini-3.5-flash-lite', [ValidateSet('smoke', 'embedding-dev', 'embedding-external', 'online-check')][string]$Task = 'smoke',
-      [string[]]$Docs = @(), [string]$Questions = '', [string[]]$Only = @())
+      [string[]]$Docs = @(), [string]$Questions = '', [string]$Only = '')
+$OnlyIds = @($Only -split '[,\s]+' | Where-Object { $_ })
 
 # Only a model NAME is accepted here; app\gemini.py still refuses anything outside its free-tier allowlist.
 if ($Model -notmatch '^gemini-[a-z0-9.\-]+$') { Write-Host 'Invalid -Model value.' -ForegroundColor Yellow; exit 2 }
@@ -90,7 +94,7 @@ try {
         if ($Task -eq 'embedding-dev') {
             Write-Host '(embedding experiment on DEV questions: about 150 texts / 19 embedding requests, no text generation; hard limit 30 requests).'
         } elseif ($Task -eq 'online-check') {
-            Write-Host "(online chatbot check on YOUR files: Gemini embeddings + one generation request per question in -Only ($($Only.Count) ids); hard limit 60 requests)."
+            Write-Host "(online chatbot check on YOUR files: Gemini embeddings + one generation request per question in -Only ($($OnlyIds.Count) ids); hard limit 60 requests)."
             Write-Host 'The files must be synthetic or otherwise safe to send to Google: free-tier content may be used by the provider.'
         } elseif ($Task -eq 'embedding-external') {
             Write-Host "(embedding experiment on YOUR files $($Docs -join ', ') / ${Questions}: no text generation; hard limits 45 requests, 260 texts)."
@@ -137,15 +141,16 @@ try {
                 ForEach-Object { "$_".Replace($plain, '***') }
             # The command line of each task, as a child process receives it. No module is started, so no network is used.
             foreach ($case in @(@('smoke', 'scripts.live_eval', ''), @('embedding-dev', 'scripts.embedding_experiment', '--run'),
-                                @('embedding-external', 'scripts.embedding_experiment', '--run --docs a.csv b.md --questions q.json'))) {
-                [string[]]$taskArgs = Get-TaskArguments $case[0] @('a.csv', 'b.md') 'q.json'
+                                @('embedding-external', 'scripts.embedding_experiment', '--run --docs a.csv b.md --questions q.json'),
+                                @('online-check', 'scripts.blind_eval', '--online --docs a.csv b.md --questions q.json --out-dir reports\blind_online --only T1 T2'))) {
+                [string[]]$taskArgs = Get-TaskArguments $case[0] @('a.csv', 'b.md') 'q.json' @('T1', 'T2')
                 $seen = (& $python -c "import sys; print(' '.join(sys.argv[1:]))" @taskArgs 2>&1 | Out-String).Trim()
                 $expected = ("-m $($case[1]) $($case[2])").Trim()
                 if ($seen -eq $expected) { Write-Host "[self-test] task $($case[0]): arguments '$seen': OK" }
                 else { Write-Host "[self-test] task $($case[0]): got '$seen', expected '$expected': FAIL" -ForegroundColor Red }
             }
         } else {
-            [string[]]$taskArgs = Get-TaskArguments $Task $Docs $Questions $Only
+            [string[]]$taskArgs = Get-TaskArguments $Task $Docs $Questions $OnlyIds
             & $python @taskArgs 2>&1 | ForEach-Object { "$_".Replace($plain, '***') }
         }
         $exitCode = $LASTEXITCODE
