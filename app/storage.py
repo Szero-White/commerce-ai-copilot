@@ -1,30 +1,14 @@
 """SQLite for the demo. Normalized FTS5 index avoids fragile Vietnamese diacritics matching."""
 import json
 import math
-import re
 import sqlite3
 import threading
-import unicodedata
 from pathlib import Path
 from .config import ROOT
+# Query-side vocabulary and text normalisation live in query.py; re-exported for existing importers.
+from .query import (ALIASES, STOP, STOP_ACCENTED, Lexicon, analyze, normalize,  # noqa: F401
+                    raw_tokens as _raw_tokens, states_stock)
 
-
-def normalize(text: str) -> str:
-    text = text.replace("đ", "d").replace("Đ", "D")
-    text = unicodedata.normalize("NFKD", text)
-    text = "".join(c for c in text if not unicodedata.combining(c))
-    return re.sub(r"[^a-z0-9 ]+", " ", text.lower())
-
-
-STOP = set("""toi minh ban cho ve va la co khong nao gi bao nhieu the nao thu duoc cua voi trong mot khi hay can
-giup xem tim san pham loai hang lau may nhu nay hom muon xin mua tren cac nhung moi da dang se rat qua
-hoac neu thi de di ra vao what is the a an of in do you can i how much are there for to who tell me
-it be on at by with and or my your we this that does did will would should could any some about
-dau ap dung phai come get have has was were if because when while from just""".split())
-# Accented question/function words whose unaccented form is also a product word (tủ, đèn, tải).
-STOP_ACCENTED = {"mất", "từ", "đến", "tại"}
-# Spoken form -> the form used in the documents (checked on normalized text).
-ALIASES = {"thanh pho ho chi minh": "tp hcm", "sai gon": "tp hcm", "ho chi minh": "tp hcm"}
 # Domain synonyms (query term -> tokens that may carry the same meaning in the documents).
 # Generic e-commerce vocabulary, not tied to any evaluation question.
 SYNONYMS = {
@@ -66,10 +50,6 @@ def _near(positions: dict[str, list[int]]) -> bool:
     return len(items) < 2 or any(
         abs(x - y) <= PROXIMITY
         for i, a in enumerate(items) for b in items[i + 1:] for x in a for y in b)
-
-
-def _raw_tokens(text: str) -> list[str]:
-    return re.findall(r"\w+", unicodedata.normalize("NFC", text).lower())
 
 
 class _ClosingConnection(sqlite3.Connection):
@@ -150,34 +130,32 @@ class Store:
         with self._lock, self.connect() as cx:
             cx.execute("UPDATE documents SET embedding_json=?, embedding_model=? WHERE id=?", (json.dumps(embedding), model, doc_id))
 
-    def fts_search(self, query, limit=12):
-        # Single digits are kept: "giảm 5%" must be checked against the documents like "90" is.
-        spoken = " ".join(normalize(query).split())
-        for alias, canonical in ALIASES.items():
-            spoken = spoken.replace(alias, canonical)
-        terms = [t for t in spoken.split() if (len(t) >= 2 or t.isdigit()) and t not in STOP]
-        terms = list(dict.fromkeys(terms))[:10]
+    def _catalogue(self, limit):
+        """'Which products do you sell?': no content word to match, so list product documents."""
+        with self.connect() as cx:
+            return [dict(r) for r in cx.execute(
+                "SELECT * FROM documents WHERE category='product' ORDER BY id LIMIT ?", (limit,))]
+
+    def fts_search(self, query, limit=12, trace=None):
+        """Lexical candidates for `query`. `trace` (a dict) receives how the question was read."""
+        with self.connect() as cx:
+            corpus_rows = [(r[0], r[1]) for r in cx.execute("SELECT title,content FROM documents")]
+        # Words are classified against the vocabulary of the documents themselves (see query.py).
+        analysis = analyze(query, Lexicon((t + " " + c for t, c in corpus_rows), known=SYNONYMS))
+        if trace is not None:
+            trace.update(analysis.trace())
+        terms, accented = analysis.terms, analysis.accented
         if not terms:
-            return []
+            return self._catalogue(limit) if analysis.catalog else []
         # Words typed WITH diacritics must match with diacritics ("nhân viên" != "nhận"); only a
         # diacritic-free query word may match loosely.
-        accented = {}
-        for raw in _raw_tokens(query):
-            norm = normalize(raw).strip()
-            if raw in STOP_ACCENTED and norm in terms:
-                terms.remove(norm)  # "mất" (how long) is a question word, unlike "mặt" (surface)
-            elif norm in terms and raw != norm:
-                accented[norm] = raw
-        if not terms:
-            return []
-        wanted = list(dict.fromkeys(w for term in terms for w in (term,) + SYNONYMS.get(term, ())))
+        wanted = list(dict.fromkeys(w for term in terms + analysis.soft for w in (term,) + SYNONYMS.get(term, ())))
         expression = " OR ".join('"' + w + '"' + ("*" if _inflectable(w) else "") for w in wanted)
         with self.connect() as cx:
             rows = cx.execute("""SELECT d.*,bm25(document_fts) AS fts_score
                 FROM document_fts JOIN documents d ON document_fts.doc_id=d.id
                 WHERE document_fts MATCH ? ORDER BY fts_score LIMIT ?""", (expression, limit * 3)).fetchall()
-            corpus = [normalize(r[0] + " " + r[1]).split() for r in
-                      cx.execute("SELECT title,content FROM documents")]
+            corpus = [normalize(t + " " + c).split() for t, c in corpus_rows]
             df = {t: sum(bool(_positions(t, d)) for d in corpus) for t in terms}
             # Rare or unknown words carry more weight than words found in most documents.
             weight = {t: math.log(1 + len(corpus) / ((df[t] or 0.1) + 0.1)) for t in terms}
@@ -203,9 +181,16 @@ class Store:
                     continue
                 if not _near({t: where[t] for t in hits if not t.isdigit()}):
                     continue
+                if analysis.asks_stock and not states_stock(tokens):
+                    continue  # asked for a stock figure; this document never states one
                 filtered.append(doc)
                 if len(filtered) >= limit:
                     break
+            if analysis.discovery and len(terms) <= 2:
+                # "Which X do you have?": documents whose TITLE names X (products first) before passing mentions.
+                def names_it(doc):
+                    return any(_positions(t, normalize(doc["title"]).split()) for t in terms)
+                filtered.sort(key=lambda doc: (not names_it(doc), doc["category"] != "product"))
             return filtered
 
     def log(self, kind, mode, ms, input_tokens=0, output_tokens=0):

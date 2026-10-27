@@ -32,8 +32,8 @@ def index_vectors(store, settings):
         return {"enabled": False, "indexed": count, "reason": str(exc)}
 
 
-def search(store, settings, query, k=3):
-    lexical = store.fts_search(query, limit=15)
+def search(store, settings, query, k=3, trace=None):
+    lexical = store.fts_search(query, limit=15, trace=trace)
     ranking = {}
     documents = {d["id"]: d for d in store.documents()}
     for rank, d in enumerate(lexical, 1):

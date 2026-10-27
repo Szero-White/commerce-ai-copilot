@@ -69,7 +69,8 @@ def _extractive_answer(sources, prefix):
 
 def question_answer(store, settings, question):
     start = time.perf_counter()
-    sources, search_mode = search(store, settings, question, k=3)
+    query_trace = {}
+    sources, search_mode = search(store, settings, question, k=3, trace=query_trace)
     tokens_in = tokens_out = 0
     model_called = False
     evidence_checked = False
@@ -111,6 +112,7 @@ def question_answer(store, settings, question):
     store.log("chat", mode, ms, tokens_in, tokens_out)
     return {"answer":answer,"mode":mode,"retrieval_mode":search_mode,"sources":sources,
             "latency_ms":ms,"tokens_in":tokens_in,"tokens_out":tokens_out,
+            "query_trace":query_trace,
             "citation_ids_checked":evidence_checked,
             "context_window":context_window(settings,tokens_in) if model_called else None,
             "llm":llm_info(settings) if model_called else None,
