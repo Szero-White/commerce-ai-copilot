@@ -126,3 +126,27 @@ Editing note: append with the Edit tool (UTF-8); PowerShell `Add-Content` mangle
 - Limits: one previous turn only; no summary; no far references; the unaccented pronoun "no" is not recognised (only "nó");
   Agent / Support / Campaign are single-turn. Metrics unchanged (dev 39/52, leaks 0/10, near-miss 0/12, legacy identical).
 - Full suite: 324 passed.
+
+## Phase 7 — B1 embedding experiment: PREPARED, WAITING FOR THE OWNER TO RUN IT (status: NOT VERIFIED)
+- Permission for B1 was given by the owner ("Cho phép B1"); no API call has been made by this agent, and none will be.
+- `scripts/embedding_experiment.py` (offline-testable): embeds the 15 synthetic documents, their 60 sentences and the 77 DEV +
+  near-miss questions = **151 texts, about 19 requests, about 2.5 minutes** at the adapter's 60 texts/min (slightly above the
+  "about 130 texts / 17 requests" estimate given when asking; hard limits 180 texts / 30 requests). The locked holdout is not
+  read. Modes: `--dry-run` (counts only), `--cache-only` (analyses vectors already cached, refuses to send anything), `--run`.
+- Analysis on DEV: lexical alone vs lexical + `gate.admit_semantic` over a 9x9x3x3x2 grid; zero leaks on negatives and
+  near-misses is the calibration target; picks the zero-leak point whose grid neighbours are also zero-leak (a plateau), best
+  synonym/need recall, then most conservative; ablation of every gate clause; the pre-registered rule: hybrid may be enabled
+  only if (a) synonym/need Hit@3 gain >= 15 points, (b) zero dev leaks, (c) every clause shows a measured effect, (d) <= 25
+  requests. Result goes to `reports/b1_embedding_dev.json` (no key inside).
+- Launcher: `run_gemini_live.ps1 -Task embedding-dev` (default task stays the smoke test): hidden key prompt, YES confirmation,
+  `LLM_PROVIDER=off`, 30 requests / 180 texts hard limits, env restored in `finally`. Only its PowerShell syntax was checked
+  (parser, nothing executed); the auto-mode classifier refused to run its `-SelfTest`, so please run
+  `powershell -NoProfile -ExecutionPolicy Bypass -File .\run_gemini_live.ps1 -SelfTest -Task embedding-dev` yourself first.
+- Tests (`tests/test_embedding_experiment.py`, 10): dry-run and cache-only never touch the network (the HTTP function is
+  patched to explode), `--run` refuses without key + free-tier confirmation, texts are dev-only and within budget, and on an
+  invented catalogue with invented vectors: meaning-only matches admitted, near-miss similarity refused by the thresholds, an
+  unknown name refused by the hard constraint (ablation shows the veto matters), no configuration chosen when a negative looks
+  exactly like a positive, every unmet condition of the decision rule reported. They prove the harness logic, not any model.
+- Until the owner runs it: semantic retrieval = designed and unit-tested with synthetic vectors, **NOT VERIFIED** with real
+  embeddings; hybrid stays OFF. Phases 8-11 that depend on the outcome (freeze, fresh data, final session) wait for it.
+- Full suite: 334 passed.

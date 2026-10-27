@@ -17,9 +17,14 @@
   billing errors; it never switches to another model or a paid tier. Do NOT paste the key into the
   chat, a file or the command line.
 
+  -Task embedding-dev: instead of the smoke test, run the B1 embedding experiment
+      (python -m scripts.embedding_experiment --run): about 150 texts / 19 embedding requests for the synthetic
+      documents, their sentences and the DEV questions (never the holdout); no text generation (LLM_PROVIDER=off);
+      hard limits 30 requests and 180 texts; results are cached, so a rerun costs nothing.
+
   -SelfTest: no key prompt, no network. Uses a fake key to prove the masking and clean-up logic.
 #>
-param([switch]$SelfTest, [string]$Model = 'gemini-3.5-flash-lite')
+param([switch]$SelfTest, [string]$Model = 'gemini-3.5-flash-lite', [ValidateSet('smoke', 'embedding-dev')][string]$Task = 'smoke')
 
 # Only a model NAME is accepted here; app\gemini.py still refuses anything outside its free-tier allowlist.
 if ($Model -notmatch '^gemini-[a-z0-9.\-]+$') { Write-Host 'Invalid -Model value.' -ForegroundColor Yellow; exit 2 }
@@ -28,8 +33,10 @@ $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $python = Join-Path $root '.venv\Scripts\python.exe'
 $names = @('GEMINI_API_KEY', 'LLM_PROVIDER', 'EMBEDDING_PROVIDER', 'GEMINI_MODEL', 'EMBEDDING_MODEL',
-           'GEMINI_EMBEDDING_MODEL', 'GEMINI_CONFIRM_FREE_TIER', 'GEMINI_MAX_REQUESTS', 'PYTHONIOENCODING',
-           'PYTHONWARNINGS', 'PYTHONDONTWRITEBYTECODE')
+           'GEMINI_EMBEDDING_MODEL', 'GEMINI_CONFIRM_FREE_TIER', 'GEMINI_MAX_REQUESTS', 'GEMINI_MAX_EMBED_TEXTS',
+           'PYTHONIOENCODING', 'PYTHONWARNINGS', 'PYTHONDONTWRITEBYTECODE')
+$module = if ($Task -eq 'embedding-dev') { 'scripts.embedding_experiment' } else { 'scripts.live_eval' }
+$moduleFile = ($module -replace '^scripts\.', 'scripts\') + '.py'
 $previous = @{}
 foreach ($n in $names) { $previous[$n] = [Environment]::GetEnvironmentVariable($n, 'Process') }
 $plain = $null
@@ -37,7 +44,7 @@ $exitCode = 1
 
 try {
     if (-not (Test-Path $python)) { throw "Missing $python. Create the project .venv first (see README)." }
-    if (-not (Test-Path (Join-Path $root 'scripts\live_eval.py'))) { throw 'scripts\live_eval.py not found.' }
+    if (-not (Test-Path (Join-Path $root $moduleFile))) { throw "$moduleFile not found." }
 
     if ($SelfTest) {
         $plain = 'SELFTEST-FAKE-KEY-0123456789abcdef'
@@ -45,7 +52,11 @@ try {
     } else {
         Write-Host ''
         Write-Host 'This will send ONLY synthetic catalogue/policy text and demo questions to the Gemini API'
-        Write-Host "(smoke test: model $Model only, about 7 requests, nothing is embedded; hard limit 40)."
+        if ($Task -eq 'embedding-dev') {
+            Write-Host '(embedding experiment on DEV questions: about 150 texts / 19 embedding requests, no text generation; hard limit 30 requests).'
+        } else {
+            Write-Host "(smoke test: model $Model only, about 7 requests, nothing is embedded; hard limit 40)."
+        }
         Write-Host 'Use a key from a Google AI Studio project that shows "Free Tier" and has NO billing set up.'
         $secure = Read-Host 'Paste the API key (input is hidden)' -AsSecureString
         $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
@@ -64,6 +75,11 @@ try {
     $env:GEMINI_EMBEDDING_MODEL = 'gemini-embedding-001'
     $env:GEMINI_CONFIRM_FREE_TIER = 'yes'
     $env:GEMINI_MAX_REQUESTS = '40'
+    if ($Task -eq 'embedding-dev') {
+        $env:LLM_PROVIDER = 'off'             # embeddings only: no text is generated
+        $env:GEMINI_MAX_REQUESTS = '30'
+        $env:GEMINI_MAX_EMBED_TEXTS = '180'
+    }
     $env:PYTHONIOENCODING = 'utf-8'
     $env:PYTHONWARNINGS = 'ignore'
     $env:PYTHONDONTWRITEBYTECODE = '1'
@@ -75,7 +91,8 @@ try {
             & $python -c "import os; print('child sees key:', os.environ['GEMINI_API_KEY'])" 2>&1 |
                 ForEach-Object { "$_".Replace($plain, '***') }
         } else {
-            & $python -m scripts.live_eval 2>&1 | ForEach-Object { "$_".Replace($plain, '***') }
+            $moduleArgs = if ($Task -eq 'embedding-dev') { @('--run') } else { @() }
+            & $python -m $module @moduleArgs 2>&1 | ForEach-Object { "$_".Replace($plain, '***') }
         }
         $exitCode = $LASTEXITCODE
     } finally {
@@ -102,10 +119,11 @@ if ($SelfTest) {
 }
 
 Write-Host ''
+$reportFile = if ($Task -eq 'embedding-dev') { 'reports\b1_embedding_dev.json' } else { 'reports\live_eval_gemini_smoke.json' }
 if ($exitCode -eq 0) {
-    Write-Host 'Run finished. Smoke report: reports\live_eval_gemini_smoke.json (contains no key). Tell Claude Code it is ready.' -ForegroundColor Green
+    Write-Host "Run finished. Report: $reportFile (contains no key). Tell Claude Code it is ready." -ForegroundColor Green
 } else {
     Write-Host "Run ended with exit code $exitCode (stopped early, quota/model/billing error, or cancelled)." -ForegroundColor Yellow
-    Write-Host 'A partial report may exist in reports\live_eval_gemini_smoke.json. Nothing was retried on another model or tier.'
+    Write-Host "A partial report may exist in $reportFile; texts already embedded stay cached. Nothing was retried on another model or tier."
 }
 exit $exitCode
