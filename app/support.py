@@ -10,25 +10,42 @@ from .storage import normalize
 
 # Routing is intentionally deterministic so that no LLM can approve a refund,
 # invent an order status, or write to a customer without human review.
+# Phrases are accent-folded and matched on word boundaries. They describe the KIND of request (a defect, an exchange, a data
+# request), never a product: the product named in a message must not decide how it is routed. Where a folded word has an
+# unrelated everyday meaning ("hỏng" / "hồng" = pink, "nứt" / "nút" = button, "đổi" / "đợi" = wait) the phrase is anchored
+# to a context word ("bị hỏng", "hư hỏng", "đổi hàng") instead of using the bare word.
+# Order matters: a defect claim that quotes an order number is still a defect claim, so it is checked before the data rules.
 RULES = (
-    ("privacy_order", "high", "Customer support / identity verification", (
-        "my order", "order status", "tracking number", "track order", "don hang", "kiem tra don", "ma don", "dia chi", "phone number")),
     ("damaged_product", "high", "Customer support / claims", (
-        "damaged", "broken", "defective", "wrong item", "faulty", "bi loi", "hu hong", "be vo", "giao sai")),
+        "damaged", "broken", "defective", "wrong item", "faulty", "scratched", "scratch", "cracked", "dented", "defect",
+        "not working", "does not work", "doesn t work", "stopped working", "missing part", "missing parts",
+        "bi loi", "hu hong", "be vo", "giao sai", "giao nham", "giao thieu", "bi tray", "tray xuoc", "xuoc", "bi mop", "bi meo",
+        "bi nut", "bi vo", "bi gay", "bi hong", "bi hu", "bi rach", "bi mong", "bi tray xuoc", "hang loi", "san pham loi",
+        "loi san xuat", "hong hoc", "khong hoat dong", "khong chay", "khong dung duoc", "sai mau", "sai size", "sai kich thuoc")),
+    ("privacy_order", "high", "Customer support / identity verification", (
+        "my order", "order status", "tracking number", "track order", "don hang", "kiem tra don", "ma don", "dia chi", "phone number",
+        "so dien thoai")),
     ("return_policy", "medium", "Customer support / returns", (
-        "return", "refund", "exchange", "doi tra", "hoan tien", "tra hang")),
+        "return", "refund", "exchange", "replace", "replacement", "send back", "money back", "doi tra", "hoan tien", "tra hang",
+        "tra lai", "hoan lai", "doi hang", "doi san pham", "doi mau", "doi size", "doi lai", "doi cai", "doi sang", "muon doi",
+        "can doi", "xin doi", "bao hanh", "warranty", "guarantee")),
     ("shipping_question", "low", "Customer support / shipping", (
         "shipping", "delivery", "ship", "giao hang", "van chuyen")),
     ("product_question", "low", "Product support", (
-        "size", "sizes", "mug", "hoodie", "oak", "chair", "dimensions", "price", "gia", "kich thuoc", "san pham")),
+        "size", "sizes", "dimensions", "price", "gia", "kich thuoc", "kich co", "chat lieu", "san pham")),
 )
 
 
 def route(text):
+    lowered = text.lower()
     norm = " ".join(normalize(text).split())
+    waiting = "đợi" in lowered and "đổi" not in lowered       # "đợi hàng" (waiting for goods) folds to the same words as "đổi hàng"
     for intent, priority, owner, phrases in RULES:
-        if any(re.search(r"(?<![a-z0-9])" + re.escape(phrase) + r"(?![a-z0-9])", norm) for phrase in phrases):
-            return intent, priority, owner
+        for phrase in phrases:
+            if waiting and phrase.startswith(("doi ", "muon doi", "can doi", "xin doi")):
+                continue
+            if re.search(r"(?<![a-z0-9])" + re.escape(phrase) + r"(?![a-z0-9])", norm):
+                return intent, priority, owner
     return "unknown", "medium", "Customer support / manual review"
 
 
