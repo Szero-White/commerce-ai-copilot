@@ -29,8 +29,8 @@
 
   -SelfTest: no key prompt, no network. Uses a fake key to prove the masking and clean-up logic.
 #>
-param([switch]$SelfTest, [string]$Model = 'gemini-3.5-flash-lite', [ValidateSet('smoke', 'embedding-dev', 'embedding-external')][string]$Task = 'smoke',
-      [string[]]$Docs = @(), [string]$Questions = '')
+param([switch]$SelfTest, [string]$Model = 'gemini-3.5-flash-lite', [ValidateSet('smoke', 'embedding-dev', 'embedding-external', 'online-check')][string]$Task = 'smoke',
+      [string[]]$Docs = @(), [string]$Questions = '', [string[]]$Only = @())
 
 # Only a model NAME is accepted here; app\gemini.py still refuses anything outside its free-tier allowlist.
 if ($Model -notmatch '^gemini-[a-z0-9.\-]+$') { Write-Host 'Invalid -Model value.' -ForegroundColor Yellow; exit 2 }
@@ -42,15 +42,23 @@ $names = @('GEMINI_API_KEY', 'LLM_PROVIDER', 'EMBEDDING_PROVIDER', 'GEMINI_MODEL
            'GEMINI_EMBEDDING_MODEL', 'GEMINI_CONFIRM_FREE_TIER', 'GEMINI_MAX_REQUESTS', 'GEMINI_MAX_EMBED_TEXTS',
            'PYTHONIOENCODING', 'PYTHONWARNINGS', 'PYTHONDONTWRITEBYTECODE')
 $isEmbedding = $Task -in @('embedding-dev', 'embedding-external')
-$module = if ($isEmbedding) { 'scripts.embedding_experiment' } else { 'scripts.live_eval' }
+$needsFiles = $Task -in @('embedding-external', 'online-check')
+$module = if ($isEmbedding) { 'scripts.embedding_experiment' } elseif ($Task -eq 'online-check') { 'scripts.blind_eval' } else { 'scripts.live_eval' }
 $moduleFile = ($module -replace '^scripts\.', 'scripts\') + '.py'
 
 # Arguments that follow the python executable for a task. An explicit string[] (never a value that PowerShell can unroll
 # into a scalar) so that --run is always passed for the embedding experiment, which refuses to run without it.
-function Get-TaskArguments([string]$TaskName, [string[]]$DocFiles = @(), [string]$QuestionsFile = '') {
+function Get-TaskArguments([string]$TaskName, [string[]]$DocFiles = @(), [string]$QuestionsFile = '', [string[]]$OnlyIds = @()) {
     $list = New-Object System.Collections.Generic.List[string]
     $list.Add('-m')
-    if ($TaskName -in @('embedding-dev', 'embedding-external')) {
+    if ($TaskName -eq 'online-check') {
+        $list.Add('scripts.blind_eval'); $list.Add('--online')
+        $list.Add('--docs'); foreach ($f in $DocFiles) { $list.Add($f) }
+        $list.Add('--questions'); $list.Add($QuestionsFile)
+        $list.Add('--out-dir'); $list.Add('reports\blind_online')
+        if ($OnlyIds.Count -gt 0) { $list.Add('--only'); foreach ($i in $OnlyIds) { $list.Add($i) } }
+    }
+    elseif ($TaskName -in @('embedding-dev', 'embedding-external')) {
         $list.Add('scripts.embedding_experiment'); $list.Add('--run')
         if ($TaskName -eq 'embedding-external') {
             $list.Add('--docs'); foreach ($f in $DocFiles) { $list.Add($f) }
@@ -68,7 +76,7 @@ $exitCode = 1
 try {
     if (-not (Test-Path $python)) { throw "Missing $python. Create the project .venv first (see README)." }
     if (-not (Test-Path (Join-Path $root $moduleFile))) { throw "$moduleFile not found." }
-    if ($Task -eq 'embedding-external') {
+    if ($needsFiles) {
         if ($Docs.Count -eq 0 -or [string]::IsNullOrWhiteSpace($Questions)) { throw 'embedding-external needs -Docs <files> and -Questions <file>.' }
         foreach ($f in @($Docs) + @($Questions)) { if (-not (Test-Path $f)) { throw "File not found: $f" } }
     }
@@ -81,6 +89,9 @@ try {
         Write-Host 'This will send ONLY synthetic catalogue/policy text and demo questions to the Gemini API'
         if ($Task -eq 'embedding-dev') {
             Write-Host '(embedding experiment on DEV questions: about 150 texts / 19 embedding requests, no text generation; hard limit 30 requests).'
+        } elseif ($Task -eq 'online-check') {
+            Write-Host "(online chatbot check on YOUR files: Gemini embeddings + one generation request per question in -Only ($($Only.Count) ids); hard limit 60 requests)."
+            Write-Host 'The files must be synthetic or otherwise safe to send to Google: free-tier content may be used by the provider.'
         } elseif ($Task -eq 'embedding-external') {
             Write-Host "(embedding experiment on YOUR files $($Docs -join ', ') / ${Questions}: no text generation; hard limits 45 requests, 260 texts)."
             Write-Host 'The files must be synthetic or otherwise safe to send to Google: free-tier content may be used by the provider.'
@@ -105,6 +116,10 @@ try {
     $env:GEMINI_EMBEDDING_MODEL = 'gemini-embedding-001'
     $env:GEMINI_CONFIRM_FREE_TIER = 'yes'
     $env:GEMINI_MAX_REQUESTS = '40'
+    if ($Task -eq 'online-check') {
+        $env:GEMINI_MAX_REQUESTS = '60'       # embeddings of anything not cached + one generation per question asked
+        $env:GEMINI_MAX_EMBED_TEXTS = '260'
+    }
     if ($isEmbedding) {
         $env:LLM_PROVIDER = 'off'             # embeddings only: no text is generated
         $env:GEMINI_MAX_REQUESTS = if ($Task -eq 'embedding-external') { '45' } else { '30' }
@@ -130,7 +145,7 @@ try {
                 else { Write-Host "[self-test] task $($case[0]): got '$seen', expected '$expected': FAIL" -ForegroundColor Red }
             }
         } else {
-            [string[]]$taskArgs = Get-TaskArguments $Task $Docs $Questions
+            [string[]]$taskArgs = Get-TaskArguments $Task $Docs $Questions $Only
             & $python @taskArgs 2>&1 | ForEach-Object { "$_".Replace($plain, '***') }
         }
         $exitCode = $LASTEXITCODE
@@ -158,7 +173,7 @@ if ($SelfTest) {
 }
 
 Write-Host ''
-$reportFile = switch ($Task) { 'embedding-dev' { 'reports\b1_embedding_dev.json' } 'embedding-external' { 'reports\b1_embedding_external.json' } default { 'reports\live_eval_gemini_smoke.json' } }
+$reportFile = switch ($Task) { 'embedding-dev' { 'reports\b1_embedding_dev.json' } 'embedding-external' { 'reports\b1_embedding_external.json' } 'online-check' { 'reports\blind_online\summary.json' } default { 'reports\live_eval_gemini_smoke.json' } }
 if ($exitCode -eq 0) {
     Write-Host "Run finished. Report: $reportFile (contains no key). Tell Claude Code it is ready." -ForegroundColor Green
 } else {

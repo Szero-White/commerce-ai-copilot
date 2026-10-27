@@ -272,6 +272,20 @@ lexical + `gate.admit_semantic` with thresholds FIXED from the dev experiment (n
 channel gained, displaced, and which unanswerable questions it gave a source (a `premise_mismatch` correction is not counted as a leak);
 (3) score separation. Pre-registered rule: Hit@3 gain >= 15 points, zero added unsupported sources, nothing displaced, <= 45 requests;
 a pass would only justify a sealed confirmation run. `run_gemini_live.ps1 -Task embedding-external -Docs ... -Questions ...`.
+### Embedding on the external trial: RESULT (real Gemini, 219 texts, 28 requests, run by the owner)
+Before the gate the embedding alone puts the expected document at **top-1 101/103, top-3 103/103** (MRR 0.99). After the gate, with the
+dev-fixed thresholds: lexical 64/103 -> lexical + semantic **83/103**, nothing displaced, but **2 unanswerable questions got a source**
+(T076 "QuietKey Q7 có bảo hành trọn đời không?", T090 "Nồi Crispio C2 có tự rửa bằng nước nóng không?"): the RIGHT product, but the
+document does not state the asked attribute. Rule unmet (b). Diagnosis (cache only): those two have the HIGHEST similarity of all admitted cases
+(0.79) because the product name is in the question; no similarity feature separates "relevant" from "states it". That needs reading.
+**Design that follows the principle "relevant is not sufficient":** meaning-only candidates are admitted only when an LLM will verify
+them (`retrieval.semantic_candidates`: document + sentence vectors, thresholds fixed on dev, every hard gate constraint; marked
+`evidence_basis: semantic`); the prompt then says "state only what the documents NAME; otherwise reply 'Tôi chưa có đủ thông tin...'";
+a decline gives `mode=llm_insufficient_evidence` with NO sources; a stated claim still passes `evidence.valid_cited_answer`. With the LLM
+off the channel stays closed (nothing could verify). Sentences are stored (`doc_spans`), kept in step with updates/deletes, indexed by
+`index_vectors`. Default remains OFF (both providers off). **Hybrid is NOT validated online until `blind_eval --online` shows the 2 cases
+declined and no new unsupported source** (owner-run: `run_gemini_live.ps1 -Task online-check`). Offline tests use fake embeddings/LLM (wiring + safety
+logic only). 384 tests; dev 40/52, leaks 0, legacy unchanged.
 **What is NOT fixable lexically, and what is missing to verify semantic retrieval:** 25/25 `synonym_need` still 0 (plus most remaining policy paraphrases:
 "nộp", "đổi ý", "thanh toán sau lúc giao"): the question shares no words with the document. B1 (dev, 151 texts) showed the right
 document ranks first but absolute similarity cannot separate it from unanswerable questions. Missing: (1) an embedding run on THIS trial

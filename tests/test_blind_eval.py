@@ -114,6 +114,19 @@ def test_unusable_inputs_are_refused_before_anything_is_scored(files, capsys, ca
     assert message in capsys.readouterr().out and not (files / "o4").exists()
 
 
+def test_online_mode_refuses_without_the_owners_environment_and_never_calls_out(files, capsys, monkeypatch):
+    for var in ("GEMINI_API_KEY", "GEMINI_CONFIRM_FREE_TIER"):
+        monkeypatch.delenv(var, raising=False)
+    assert run(files, "--online") == 2
+    assert "online mode needs" in capsys.readouterr().out and not (files / "out").exists()
+
+
+def test_only_restricts_the_cases_and_rejects_unknown_ids(files, capsys):
+    assert run(files, "--only", "A1", "B1") == 0
+    assert set(records(files)) == {"A1", "B1"}
+    assert run(files, "--only", "NOPE") == 2 and "unknown cases: NOPE" in capsys.readouterr().out
+
+
 def test_validate_only_checks_the_files_without_evaluating(files, capsys):
     assert run(files, "--validate-only") == 0
     assert "nothing was evaluated" in capsys.readouterr().out and not (files / "out").exists()

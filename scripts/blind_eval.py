@@ -137,8 +137,13 @@ def resolve_refs(cases, docs):
     return out
 
 
-def evaluate(docs, cases, with_seed=False):
-    """Score every case on a temporary database; returns (per-case records, summary)."""
+def evaluate(docs, cases, with_seed=False, online=False, only=None):
+    """Score every case on a temporary database; returns (per-case records, summary).
+
+    `online` (owner-run, free tier): embeddings AND the LLM come from the environment (run_gemini_live.ps1 -Task online-check);
+    the documents are indexed (cache hits when the embedding experiment ran on the same files) and only the cases in `only`
+    are asked, one every few seconds. Offline (default) both are off and nothing touches the network.
+    """
     sys.path.insert(0, str(HARNESS_ROOT))
     from app.config import Settings
     from app.evidence import answer_problems
@@ -148,15 +153,37 @@ def evaluate(docs, cases, with_seed=False):
 
     records, latencies = [], []
     with tempfile.TemporaryDirectory() as tmp:
-        settings = Settings(data_path=Path(tmp) / "blind.db", llm_provider="off", embedding_provider="off")
+        if online:
+            import os
+            from app import gemini, retrieval
+            base = Settings()
+            if base.llm_provider != "gemini" or base.embedding_provider != "gemini" or not os.environ.get("GEMINI_API_KEY") \
+                    or os.environ.get("GEMINI_CONFIRM_FREE_TIER", "").lower() != "yes":
+                raise InputError("online mode needs LLM_PROVIDER=gemini, EMBEDDING_PROVIDER=gemini, GEMINI_API_KEY and "
+                                 "GEMINI_CONFIRM_FREE_TIER=yes (use run_gemini_live.ps1 -Task online-check)")
+            gemini.reset_budget()
+            settings = Settings(data_path=Path(tmp) / "blind.db")
+        else:
+            settings = Settings(data_path=Path(tmp) / "blind.db", llm_provider="off", embedding_provider="off")
         store = Store(settings.data_path)
         if not with_seed:
             store.delete_source("seed")
         for source in sorted({d["source"] for d in docs}):
             store.apply([{k: v for k, v in d.items() if k != "source"} for d in docs if d["source"] == source], source=source)
         cases = resolve_refs(cases, store.documents() if with_seed else docs)
+        if only:
+            wanted, known = set(only), {c["id"] for c in cases}
+            if wanted - known:
+                raise InputError("--only names unknown cases: " + ", ".join(sorted(wanted - known)))
+            cases = [c for c in cases if c["id"] in wanted]
         import time
+        if online:
+            indexed = retrieval.index_vectors(store, settings)
+            if not indexed.get("enabled"):
+                raise InputError(f"indexing stopped: {indexed.get('reason')}")
         for case in cases:
+            if online:
+                time.sleep(6.5)      # free-tier generation limit: stay well below the per-minute quota
             started = time.perf_counter()
             response = question_answer(store, settings, case["question"])
             latencies.append((time.perf_counter() - started) * 1000)
@@ -185,6 +212,8 @@ def evaluate(docs, cases, with_seed=False):
                 outcome = "hallucination" if flags else ("answered" if base["pass"] else "abstained" if base["abstained"] else "wrong_source")
             record = {"id": case["id"], "group": case["group"], "question": case["question"], "type": case["type"],
                       "mode": response["mode"], "returned": base["found"], "answer": response["answer"], "flags": flags,
+                      "found_by_meaning": [s["id"] for s in response["sources"] if s.get("evidence_basis") == "semantic"],
+                      "retrieval_mode": response["retrieval_mode"],
                       "outcome": outcome, "needs_human_review": case.get("tag") == "llm_rubric"}
             if case["type"] == "hit":
                 record["source_found"] = base["retrieval_hit"]
@@ -252,6 +281,9 @@ def main(argv=None):
     ap.add_argument("--with-seed", action="store_true", help="also keep the built-in synthetic seed documents in the temporary database")
     ap.add_argument("--out-dir", default=str(HARNESS_ROOT / "reports" / "blind_eval"))
     ap.add_argument("--validate-only", action="store_true", help="check the files and stop")
+    ap.add_argument("--online", action="store_true",
+                    help="owner-run: use Gemini embeddings + LLM from the environment (see run_gemini_live.ps1 -Task online-check)")
+    ap.add_argument("--only", nargs="+", help="ask only these case ids (online mode keeps the number of requests small)")
     args = ap.parse_args(argv)
     try:
         docs, sources = load_documents(args.docs, args.category)
@@ -259,13 +291,14 @@ def main(argv=None):
         if args.validate_only:
             print(f"OK: {len(docs)} documents, {len(cases)} questions; nothing was evaluated.")
             return 0
-        records, summary = evaluate(docs, cases, args.with_seed)
+        records, summary = evaluate(docs, cases, args.with_seed, args.online, args.only)
     except (InputError, OSError, json.JSONDecodeError, ValueError) as exc:
         print(f"Input refused, nothing was evaluated: {exc}")
         return 2
     meta = {"observed_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "documents": len(docs),
             "document_files": sources, "questions_file": Path(args.questions).name, "with_seed": args.with_seed,
-            "config": {"llm": "off", "embedding": "off", "network": "none", "k": 3}}
+            "config": ({"llm": "gemini (hosted, free tier)", "embedding": "gemini (hosted)", "network": "Google AI API", "k": 3,
+                        "only": args.only} if args.online else {"llm": "off", "embedding": "off", "network": "none", "k": 3})}
     write_outputs(args.out_dir, records, summary, meta)
     for key, v in summary.items():
         if isinstance(v, dict) and "passed" in v and key != "by_group":

@@ -1,6 +1,7 @@
 """SQLite for the demo. Normalized FTS5 index avoids fragile Vietnamese diacritics matching."""
 import json
 import math
+import re
 import sqlite3
 import threading
 from pathlib import Path
@@ -9,6 +10,14 @@ from .config import ROOT
 from .gate import check_document
 from .query import (ALIASES, STOP, STOP_ACCENTED, Lexicon, analyze, normalize,  # noqa: F401
                     raw_tokens as _raw_tokens)
+
+SPAN_MIN_CHARS = 20
+
+
+def split_sentences(text):
+    """Sentences of a document: the units a meaning-based match must point at as its evidence."""
+    return [p.strip() for p in re.split(r"(?<=[.!?;])\s+", text.strip()) if len(p.strip()) >= SPAN_MIN_CHARS]
+
 
 # Domain synonyms (query term -> tokens that may carry the same meaning in the documents).
 # Generic e-commerce vocabulary, not tied to any evaluation question.
@@ -104,6 +113,10 @@ class Store:
                 output_tokens INTEGER NOT NULL DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
             CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS doc_spans (
+                doc_id TEXT NOT NULL, idx INTEGER NOT NULL, text TEXT NOT NULL, embedding_json TEXT, embedding_model TEXT,
+                PRIMARY KEY (doc_id, idx)
+            );
             """)
             columns = {row[1] for row in cx.execute("PRAGMA table_info(documents)")}
             if "embedding_model" not in columns:
@@ -122,6 +135,16 @@ class Store:
                 for d in cx.execute("SELECT * FROM documents").fetchall():
                     cx.execute("INSERT INTO document_fts(doc_id,normalized_text) VALUES(?,?)", (d["id"], normalize(d["title"] + " " + d["content"])))
                 self._bump(cx)
+            # Sentences of every document (the evidence a meaning-based match must point at); vectors are added by indexing.
+            for (doc_id,) in cx.execute("SELECT d.id FROM documents d WHERE NOT EXISTS (SELECT 1 FROM doc_spans s WHERE s.doc_id=d.id)").fetchall():
+                row = cx.execute("SELECT content FROM documents WHERE id=?", (doc_id,)).fetchone()
+                self._write_spans(cx, doc_id, row["content"])
+
+    @staticmethod
+    def _write_spans(cx, doc_id, content):
+        cx.execute("DELETE FROM doc_spans WHERE doc_id=?", (doc_id,))
+        cx.executemany("INSERT INTO doc_spans(doc_id,idx,text) VALUES(?,?,?)",
+                       [(doc_id, i, s) for i, s in enumerate(split_sentences(content))])
 
     @staticmethod
     def _bump(cx):
@@ -156,6 +179,7 @@ class Store:
                    "embedding_json=NULL,embedding_model=NULL,source=COALESCE(excluded.source,documents.source)",
                    (d["id"], d["title"], d["category"], d["content"], source))
         cls._index_fts(cx, d)
+        cls._write_spans(cx, d["id"], d["content"])      # sentence vectors of the old text are dropped with it
         cls._bump(cx)
         return "updated" if old else "added"
 
@@ -163,6 +187,7 @@ class Store:
     def _delete(cls, cx, doc_id):
         gone = cx.execute("DELETE FROM documents WHERE id=?", (doc_id,)).rowcount
         cx.execute("DELETE FROM document_fts WHERE doc_id=?", (doc_id,))
+        cx.execute("DELETE FROM doc_spans WHERE doc_id=?", (doc_id,))
         if gone:
             cls._bump(cx)
         return bool(gone)
@@ -258,6 +283,15 @@ class Store:
         with self.connect() as cx:
             row = cx.execute("SELECT * FROM documents WHERE id=?", (doc_id,)).fetchone()
             return dict(row) if row else None
+
+    def spans(self):
+        with self.connect() as cx:
+            return [dict(r) for r in cx.execute("SELECT * FROM doc_spans ORDER BY doc_id, idx")]
+
+    def update_span_embedding(self, doc_id, idx, embedding, model=None):
+        with self._lock, self.connect() as cx:
+            cx.execute("UPDATE doc_spans SET embedding_json=?, embedding_model=? WHERE doc_id=? AND idx=?",
+                       (json.dumps(embedding), model, doc_id, idx))
 
     def update_embedding(self, doc_id, embedding, model=None):
         with self._lock, self.connect() as cx:

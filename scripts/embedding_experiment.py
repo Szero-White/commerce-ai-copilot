@@ -27,7 +27,6 @@ from pathlib import Path
 
 HARNESS_ROOT = Path(__file__).resolve().parents[1]
 EVAL_DIR = HARNESS_ROOT / "data" / "eval_v4"
-SPAN_MIN_CHARS = 20
 EMBED_TEXT_BUDGET = 180          # refuse to start when more NEW texts than this would be sent
 EMBED_BATCH = 8
 REPORT = HARNESS_ROOT / "reports" / "b1_embedding_dev.json"
@@ -46,9 +45,7 @@ RULE_MIN_GAIN_POINTS = 15.0       # synonym/need group Hit@3 gain over lexical, 
 RULE_MAX_REQUESTS = 25
 
 
-def split_sentences(text):
-    parts = re.split(r"(?<=[.!?;])\s+", text.strip())
-    return [p.strip() for p in parts if len(p.strip()) >= SPAN_MIN_CHARS]
+from app.storage import SPAN_MIN_CHARS, split_sentences   # noqa: E402  the same sentences the application indexes
 
 
 def doc_text(doc):

@@ -55,13 +55,14 @@ def check_document(analysis, text: str, tokens: list[str], category: str | None 
 
 @dataclass(frozen=True)
 class SemanticParams:
-    """Defaults are deliberately strict and UNCALIBRATED; they are meaningless until measured on real embeddings."""
-    tau: float = 0.55            # minimum similarity of the document
-    z_min: float = 3.0           # robust z-score: spreads above the median score of all documents for this question
+    """Calibrated ONCE on the dev set with gemini-embedding-001 (reports/b1_embedding_dev.json) and fixed since: never tuned
+    on the independent trial. Valid for that embedding model only; another model needs its own calibration."""
+    tau: float = 0.70            # minimum similarity of the document
+    z_min: float = 4.0           # robust z-score: spreads above the median score of all documents for this question
     min_spread: float = 0.02     # floor of the spread, so identical scores cannot produce a huge z-score
-    gap_min: float = 0.03        # single-answer questions: lead over the runner-up
-    delta: float = 0.05          # list questions: distance below the best score that still counts as the same group
-    tau_span: float = 0.55       # minimum similarity of the best matching sentence of the document
+    gap_min: float = 0.02        # single-answer questions: lead over the runner-up
+    delta: float = 0.03          # list questions: distance below the best score that still counts as the same group
+    tau_span: float = 0.70       # minimum similarity of the best matching sentence of the document
     max_single: int = 2
     max_list: int = 5
 
