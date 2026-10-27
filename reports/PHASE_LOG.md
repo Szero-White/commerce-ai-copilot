@@ -286,6 +286,15 @@ off the channel stays closed (nothing could verify). Sentences are stored (`doc_
 `index_vectors`. Default remains OFF (both providers off). **Hybrid is NOT validated online until `blind_eval --online` shows the 2 cases
 declined and no new unsupported source** (owner-run: `run_gemini_live.ps1 -Task online-check`). Offline tests use fake embeddings/LLM (wiring + safety
 logic only). 384 tests; dev 40/52, leaks 0, legacy unchanged.
+**Bug found in live use (need-based question, 0 sources, no LLM call):** "Mình thường học bài ban đêm, bàn hơi tối. Shop có món nào giúp mình
+không?". Diagnosis from the cached query vector: vectors were indexed (15/15 docs, 60/60 sentences); the lamp (PRD-103) was rank 1 with document
+similarity 0.722 and best sentence 0.707 (both >= 0.70) and passed every hard constraint, but its robust z-score was 2.1 < `z_min` 4.0: the long,
+chatty question spread the scores of ALL documents (MAD 0.059 vs 0.02-0.04 on the short dev questions), so "clearly best" no longer looked
+extreme. Fix: `z_min` 4.0 -> 1.5 (z only has to reject a FLAT profile); tau / tau_span / delta / gap and every hard constraint unchanged;
+semantic sources are still always verified by the LLM. Also: when the LLM is unavailable or its citations are rejected, a meaning-only source
+is no longer shown (it was never checked). Cached-vector check: dev +1 hit and no new unanswerable source, trial unchanged, the real question now
+returns PRD-103 marked `semantic`. Residual fragility: its sentence similarity is 0.707 against tau_span 0.70, so another phrasing of a chatty need can
+still fall short; the next step would be to embed a distilled form of the question as well (one more request per question).
 **What is NOT fixable lexically, and what is missing to verify semantic retrieval:** 25/25 `synonym_need` still 0 (plus most remaining policy paraphrases:
 "nộp", "đổi ý", "thanh toán sau lúc giao"): the question shares no words with the document. B1 (dev, 151 texts) showed the right
 document ranks first but absolute similarity cannot separate it from unanswerable questions. Missing: (1) an embedding run on THIS trial

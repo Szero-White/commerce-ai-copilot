@@ -51,6 +51,22 @@ def test_a_low_score_is_never_admitted_however_much_it_stands_out():
     assert admit_semantic(s, spans("x"), True, allow_all) == []
 
 
+def test_a_chatty_question_with_widely_spread_scores_still_admits_the_clearly_best_document():
+    # Real case: a long conversational need ("...bàn hơi tối. Shop có món nào giúp mình không?") spreads the scores of ALL
+    # documents (MAD ~0.06), so the best one (0.72 vs median 0.60, runner-up 0.655) had z = 2.1 and a fixed z >= 4 refused it.
+    s = {"a": 0.722, "b": 0.655, "c": 0.650, "d": 0.639, "e": 0.624, "f": 0.60, "g": 0.59, "h": 0.57, "i": 0.56, "j": 0.55}
+    assert [i for i, _ in admit_semantic(s, spans("a", value=0.71), False, allow_all)] == ["a"]
+    assert admit_semantic(s, spans("a", value=0.71), False, allow_all, SemanticParams(z_min=4.0)) == []   # the old threshold refused it
+
+
+def test_a_flat_profile_or_a_weak_best_document_is_still_refused_with_wide_spread():
+    flat = {k: 0.66 + 0.002 * n for n, k in enumerate("abcdefghij")}                  # everything about equally similar
+    assert admit_semantic(flat, spans(*flat, value=0.9), False, allow_all) == []
+    weak = {"a": 0.66, "b": 0.60, "c": 0.58, "d": 0.55, "e": 0.52, "f": 0.50, "g": 0.48, "h": 0.45}   # best is below tau
+    assert admit_semantic(weak, spans("a", value=0.9), False, allow_all) == []
+    assert admit_semantic({"a": 0.722, "b": 0.60, "c": 0.58, "d": 0.55}, spans("a", value=0.62), False, allow_all) == []   # no matching sentence
+
+
 def test_two_equally_good_documents_are_not_a_single_answer():
     s = {**background(), "a": 0.80, "b": 0.79}
     assert admit_semantic(s, spans("a", "b"), True, allow_all) == []         # ask which one is meant

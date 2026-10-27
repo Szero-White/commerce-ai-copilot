@@ -80,6 +80,15 @@ def _extractive_answer(sources, prefix):
         f"{_excerpt(s['content'])}" for i, s in enumerate(sources, 1))
 
 
+def _unverified_fallback(included, prefix):
+    """Fallback text when the LLM did not verify an answer. A document found only by meaning was never checked against the
+    question, so it is not shown at all; documents the gate admitted by words may still be shown for the user to read."""
+    shown = [s for s in included if s.get("evidence_basis") != "semantic"]
+    if not shown:
+        return "Tôi chưa có đủ thông tin trong tài liệu để xác nhận. Vui lòng liên hệ nhân viên phụ trách.", []
+    return _extractive_answer(shown, prefix), shown
+
+
 def _clarification(store, settings, question, start, options, query_trace):
     answer = clarification_text(options)
     ms = round((time.perf_counter() - start) * 1000)
@@ -137,12 +146,11 @@ def question_answer(store, settings, question, turn_context=None):
                     answer, mode = candidate, "llm_rag_cited"
                     sources = included_sources
                 else:
-                    answer = _extractive_answer(included_sources,
+                    answer, sources = _unverified_fallback(included_sources,
                         "LLM có dẫn nguồn không hợp lệ hoặc số liệu chưa được nguồn hỗ trợ. Hiển thị tài liệu để đối chiếu:")
                     mode = "llm_citation_rejected_extractive"
-                    sources = included_sources
             except ModelUnavailable:
-                answer = _extractive_answer(included_sources,
+                answer, sources = _unverified_fallback(included_sources,
                     "Không kết nối được LLM; các đoạn tài liệu để người dùng tự đối chiếu:")
                 mode = "llm_unavailable_extractive"
     else:

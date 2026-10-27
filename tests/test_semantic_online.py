@@ -96,6 +96,24 @@ def test_when_the_llm_finds_the_documents_insufficient_nothing_is_claimed_and_no
     assert "chưa có đủ thông tin" in result["answer"] and result["citation_ids_checked"] is True
 
 
+def test_a_meaning_only_source_is_never_shown_when_the_llm_could_not_verify_it(store, tmp_path):
+    from app.ollama import ModelUnavailable
+
+    def down(settings, system, user, json_output=False):
+        raise ModelUnavailable("offline")
+    services.ollama_chat = down
+    result = services.question_answer(store, settings(tmp_path), "qqq wxyz amberish need")
+    assert result["mode"] == "llm_unavailable_extractive" and result["sources"] == []
+    assert "chưa có đủ thông tin" in result["answer"]
+    # a document the gate admitted BY WORDS is still shown for the user to read
+    lexical = services.question_answer(store, settings(tmp_path), "Item birch is described here")
+    assert lexical["mode"] == "llm_unavailable_extractive" and [s["id"] for s in lexical["sources"]] == ["E-birch"]
+    # an answer that fails the citation check does not smuggle the meaning-only source in either
+    services.ollama_chat = lambda *a, **k: ("Item amber is described here [E-nope]", 1, 1)
+    rejected = services.question_answer(store, settings(tmp_path), "qqq wxyz amberish need")
+    assert rejected["mode"] == "llm_citation_rejected_extractive" and rejected["sources"] == []
+
+
 def test_hard_constraints_still_veto_a_meaning_match(store, tmp_path):
     for question in ("Zephyr Pro qqq amberish need", "qqq amberish need giảm 5%", "qqq amberish còn hàng không"):
         assert retrieval.search(store, settings(tmp_path), question)[0] == [], question

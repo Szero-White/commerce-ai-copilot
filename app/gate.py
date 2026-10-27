@@ -58,7 +58,11 @@ class SemanticParams:
     """Calibrated ONCE on the dev set with gemini-embedding-001 (reports/b1_embedding_dev.json) and fixed since: never tuned
     on the independent trial. Valid for that embedding model only; another model needs its own calibration."""
     tau: float = 0.70            # minimum similarity of the document
-    z_min: float = 4.0           # robust z-score: spreads above the median score of all documents for this question
+    z_min: float = 1.5           # robust z-score: it only rejects a FLAT score profile (top ~ median). Was 4.0: a long, chatty
+                                 # question spreads the scores of all documents (MAD up to 0.07), so a clearly best document
+                                 # (0.72 vs median 0.60) scored z = 2.1 and was refused. tau / tau_span / delta / gap and the
+                                 # hard constraints keep their role. On the cached dev and trial vectors 1.0-2.0 give identical
+                                 # results (dev +1 hit, no new unanswerable source; trial unchanged from 4.0).
     min_spread: float = 0.02     # floor of the spread, so identical scores cannot produce a huge z-score
     gap_min: float = 0.02        # single-answer questions: lead over the runner-up
     delta: float = 0.03          # list questions: distance below the best score that still counts as the same group
