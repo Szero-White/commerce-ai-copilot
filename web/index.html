@@ -317,7 +317,9 @@
             <div class="quality-head">
               <div class="panel score-card"><span class="eyebrow dark">ĐO TRUY XUẤT (BENCHMARK)</span>
                 <div class="score-value" id="eval-score">—</div><strong>Hit@3</strong>
-                <p>Tỷ lệ câu hỏi có tài liệu kỳ vọng nằm trong 3 kết quả truy xuất. <span id="negative-metric" style="display:block;margin-top:7px;font-size:12px">Chưa đánh giá câu ngoài phạm vi.</span>
+                <p>Hit@3 trên bộ benchmark nội bộ: tỷ lệ câu hỏi có đáp án mà tài liệu kỳ vọng nằm trong 3 kết quả truy xuất. <span id="hit-detail" style="display:block;margin-top:7px;font-size:12px">Chưa chạy bộ đánh giá.</span>
+                  <span id="negative-metric" style="display:block;margin-top:7px;font-size:12px">Chưa đánh giá câu ngoài phạm vi.</span>
+                  <span style="display:block;margin-top:7px;font-size:12px">Đây không phải độ chính xác toàn bộ của AI. Độ chính xác câu trả lời của Gemini không được đo bằng benchmark này.</span>
                 </p>
                 <button class="btn primary" id="run-eval">Chạy bộ đánh giá <span>→</span>
                 </button>

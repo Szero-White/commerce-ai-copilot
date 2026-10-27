@@ -101,7 +101,7 @@ def test_navigation_collapses_for_tablets_and_the_phone_menu_is_compact():
 import hashlib
 
 ACCEPTED_LAYOUT = {   # sha256 of the files as accepted in real Chrome (line endings normalised); update ONLY for a deliberate UI change
-    "index.html": "9ed76d04c84d1996c14c4bfd9f35b67f6aecf91ff0e2695c48e77b8ef7cdc9dd",
+    "index.html": "3c1e375bec1a9e978166a3c84245132675c10d571fdc5dba95999d3d27d02719",   # quality page wording (deliberate change)
     "style.css": "8e7c357b181a5279af47d2b1ff1c89197942458f34421dc211013ccf347ec24d",
     "styles/agent-support.css": "79ff70fd664dca6d810b2be2f4bebeecf146891a9e0ad963edfa095669f131b6",
     "styles/assistant.css": "b2ffe31fb2090cf540aa1d73cd592b3612f0c29555292dd4fb22540db67b43be",
@@ -118,6 +118,18 @@ def test_html_and_css_are_exactly_the_accepted_ones():
     for name, expected in ACCEPTED_LAYOUT.items():
         data = (ROOT / "web" / name).read_bytes().replace(b"\r\n", b"\n")
         assert hashlib.sha256(data).hexdigest() == expected, f"{name} changed: multi-turn is a JavaScript-only change"
+
+
+def test_quality_page_states_what_the_benchmark_measures_and_takes_every_number_from_the_backend():
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    assert "Hit@3 trên bộ benchmark nội bộ" in html and "Đây không phải độ chính xác toàn bộ của AI" in html
+    assert "độ chính xác câu trả lời của Gemini không được đo bằng benchmark này" in html.replace("Đ", "đ", 1) or \
+        "Độ chính xác câu trả lời của Gemini không được đo bằng benchmark này" in html
+    for element in ("hit-detail", "negative-metric", "eval-score"):
+        assert f'id="{element}"' in html
+    assert "d.negative_rejection.passed" in js and "d.negative_rejection.total" in js and "d.passed" in js and "d.total" in js
+    assert "20/33" not in js + html and "60,6" not in js + html           # nothing hard-coded: the backend result is shown
 
 
 def test_chat_sends_back_the_previous_turn_context_and_forgets_it_on_errors():

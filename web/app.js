@@ -275,8 +275,10 @@ $('#run-eval').addEventListener('click', async () => {
     const d = await api('/api/evaluation');
     $('#eval-score').textContent = Math.round(d.score * 100) + '%';
     $('#case-count').textContent = `${d.passed}/${d.total} đạt`;
+    const pct = (n, t) => (t ? (100 * n / t).toFixed(1).replace('.', ',') + '%' : '—');
+    $('#hit-detail').textContent = `Hit@3: ${d.passed}/${d.total} câu có đáp án (${pct(d.passed, d.total)})`;
     $('#negative-metric').textContent =
-      `Ngoài phạm vi: ${d.negative_rejection.passed}/${d.negative_rejection.total} từ chối đúng`;
+      `Từ chối đúng câu ngoài phạm vi: ${d.negative_rejection.passed}/${d.negative_rejection.total} (${pct(d.negative_rejection.passed, d.negative_rejection.total)})`;
     const tbody = $('#cases');
     tbody.replaceChildren();
     d.cases.forEach(c => {
@@ -289,7 +291,7 @@ $('#run-eval').addEventListener('click', async () => {
       );
       tbody.append(tr);
     });
-    toast('Đã kiểm tra ' + d.total + ' câu hỏi. Đây chỉ là Hit@3 của truy xuất, không phải độ đúng của câu trả lời.');
+    toast('Đã kiểm tra ' + d.total + ' câu hỏi. Đây chỉ là Hit@3 trên benchmark nội bộ, không phải độ đúng của câu trả lời.');
   } catch (e) {
     toast(e.message);
   } finally {
