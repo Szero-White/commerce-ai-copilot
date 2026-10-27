@@ -31,6 +31,8 @@ SPAN_MIN_CHARS = 20
 EMBED_TEXT_BUDGET = 180          # refuse to start when more NEW texts than this would be sent
 EMBED_BATCH = 8
 REPORT = HARNESS_ROOT / "reports" / "b1_embedding_dev.json"
+EXTERNAL_REPORT = HARNESS_ROOT / "reports" / "b1_embedding_external.json"
+EXTERNAL_TEXT_BUDGET = 400      # an external set is larger than the dev set; still a hard refusal above this
 
 GRID = {
     "tau": [0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80],
@@ -92,7 +94,10 @@ class CaseContext:
         from app.query import normalize
         self.case = case
         info = {}
-        self.lexical = [d["id"] for d in store.fts_search(case["question"], limit=15, trace=info)]
+        found = store.fts_search(case["question"], limit=15, trace=info)
+        self.lexical = [d["id"] for d in found]
+        # a document flagged "premise_mismatch" corrects a wrong number in the question: it supports nothing, so it is no leak
+        self.premise = {d["id"] for d in found if d.get("condition_status") == "premise_mismatch"}
         self.analysis = store.analyze(case["question"])
         self.single = not (self.analysis.discovery or self.analysis.catalog or self.analysis.conditions)
         self.docs = list(docs_by_id.values())
@@ -134,9 +139,9 @@ def score_config(contexts, params, clauses=("tau", "z", "span", "delta", "gap", 
             if case["group"] == "synonym_need":
                 synonym[0] += ok; synonym[1] += 1
         elif case["type"] == "none":
-            leaks += bool(set(found) - set(case.get("allow", ())))
+            leaks += bool(set(found) - set(case.get("allow", ())) - ctx.premise)
         else:  # none_or_clarify: any returned source is a leak (the lexical path abstains on these)
-            leaks += bool(found)
+            leaks += bool(set(found) - ctx.premise)
     return {"leaks": leaks, "hits": hits, "positives": positives, "synonym_hits": synonym[0], "synonym_total": synonym[1],
             "by_group": {k: f"{v[0]}/{v[1]}" for k, v in sorted(by_group.items())}}
 
@@ -229,6 +234,82 @@ def analyse(store, cases, vectors, spans, requests_made=None):
                  "final": decide_case(c, chosen)} for c in contexts]}
 
 
+RULE_MAX_REQUESTS_EXTERNAL = 45
+RULE_MAX_NEW_LEAKS = 0
+
+
+def case_ok(ctx, found):
+    """(kind, ok): a hit case is ok when its expected documents are returned; an unanswerable one when nothing unsupported is."""
+    case = ctx.case
+    if case["type"] == "hit":
+        return "hit", (len(set(case["ids"]) & set(found)) >= case.get("min", 1)
+                       and not (set(case.get("exclude", ())) & set(found)))
+    allowed = set(case.get("allow", ())) | ctx.premise
+    return "none", not (set(found) - allowed)
+
+
+def ranking_before_the_gate(contexts):
+    """How well the embedding alone ranks the expected documents (all documents, no gate, no thresholds)."""
+    rows, by_group = [], {}
+    for ctx in contexts:
+        if ctx.case["type"] != "hit":
+            continue
+        order = sorted(ctx.doc_scores, key=ctx.doc_scores.get, reverse=True)
+        rank = min((order.index(i) + 1 for i in ctx.case["ids"] if i in order), default=None)
+        rows.append(rank)
+        g = by_group.setdefault(ctx.case["group"], [])
+        g.append(rank)
+
+    def share(ranks, k):
+        return f"{sum(1 for r in ranks if r and r <= k)}/{len(ranks)}"
+    return {"questions": len(rows), "top1": share(rows, 1), "top3": share(rows, 3), "top5": share(rows, 5),
+            "mrr": round(sum(1 / r for r in rows if r) / len(rows), 3) if rows else None,
+            "by_group_top3": {k: share(v, 3) for k, v in sorted(by_group.items())}}
+
+
+def analyse_external(store, cases, vectors, spans, params, requests_made=None):
+    """Independent set: thresholds are FIXED beforehand (calibrated on the dev set), never chosen on these data."""
+    docs_by_id = {d["id"]: d for d in store.documents()}
+    contexts = [CaseContext(c, store, docs_by_id, vectors, spans) for c in cases]
+    lexical = score_config(contexts, None)
+    semantic = score_config(contexts, params)
+    moved = {"gained": [], "lost": [], "new_unsupported_sources": []}
+    for ctx in contexts:
+        l_kind, l_ok = case_ok(ctx, ctx.lexical[:3])
+        final = decide_case(ctx, params)
+        s_kind, s_ok = case_ok(ctx, final)
+        item = {"id": ctx.case["id"], "group": ctx.case["group"], "question": ctx.case["question"],
+                "lexical": ctx.lexical[:3], "with_semantic": final}
+        if s_ok and not l_ok:
+            moved["gained"].append(item)
+        elif l_ok and not s_ok:
+            moved["lost" if s_kind == "hit" else "new_unsupported_sources"].append(item)
+    hit_best = [max(ctx.doc_scores[i] for i in ctx.case["ids"] if i in ctx.doc_scores) for ctx in contexts if ctx.case["type"] == "hit"]
+    none_best = [max((s for i, s in ctx.doc_scores.items() if ctx.hard[i]), default=0.0) for ctx in contexts if ctx.case["type"] != "hit"]
+    reasons = []
+    gain = None
+    if semantic["synonym_total"]:
+        gain = 100.0 * (semantic["synonym_hits"] - lexical["synonym_hits"]) / semantic["synonym_total"]
+    overall_gain = 100.0 * (semantic["hits"] - lexical["hits"]) / (lexical["positives"] or 1)
+    if overall_gain < RULE_MIN_GAIN_POINTS:
+        reasons.append(f"(a) Hit@3 gain over the lexical result {overall_gain:.1f} points < {RULE_MIN_GAIN_POINTS}")
+    if len(moved["new_unsupported_sources"]) > RULE_MAX_NEW_LEAKS or semantic["leaks"] > lexical["leaks"]:
+        reasons.append("(b) the semantic channel added sources to questions that the documents cannot answer")
+    if moved["lost"]:
+        reasons.append("(b2) the semantic channel displaced an expected document")
+    if requests_made is not None and requests_made > RULE_MAX_REQUESTS_EXTERNAL:
+        reasons.append(f"(d) {requests_made} requests > {RULE_MAX_REQUESTS_EXTERNAL}")
+    return {"mode": "external set, FIXED thresholds (no selection on these data)", "params": params,
+            "ranking_before_the_gate": ranking_before_the_gate(contexts),
+            "after_the_gate": {"lexical_only": lexical, "lexical_plus_semantic": semantic},
+            "moved": {k: v for k, v in moved.items()},
+            "separation": {"best_score_of_the_expected_document (hit cases): min/median/max": _mmm(hit_best),
+                           "best_score_among_documents_the_hard_gate_lets_through (unanswerable): min/median/max": _mmm(none_best)},
+            "decision": {"enable_hybrid_allowed": not reasons, "hit_gain_points": round(overall_gain, 1),
+                         "synonym_need_gain_points": gain, "unmet": reasons,
+                         "note": "A pass here would still be one set and one author: it would justify a sealed confirmation run, not use."}}
+
+
 def _mmm(values):
     values = sorted(values)
     return [round(values[0], 3), round(values[len(values) // 2], 3), round(values[-1], 3)] if values else None
@@ -259,8 +340,28 @@ def main(argv=None):
     group.add_argument("--dry-run", action="store_true")
     group.add_argument("--cache-only", action="store_true")
     group.add_argument("--run", action="store_true")
-    ap.add_argument("--out", default=str(REPORT))
+    ap.add_argument("--out", default=None)
+    ap.add_argument("--docs", nargs="+", help="EXTERNAL set: document files (csv / md / txt / json, see scripts/blind_eval.py)")
+    ap.add_argument("--questions", help="EXTERNAL set: question file written by the evaluator (json / csv)")
+    ap.add_argument("--category", default="knowledge", help="category of .md/.txt document files")
+    ap.add_argument("--params-from", default=str(REPORT),
+                    help="report whose chosen_params are used UNCHANGED on the external set (default: the dev experiment)")
+    ap.add_argument("--max-texts", type=int, default=None, help="refuse to send more NEW texts than this")
     args = ap.parse_args(argv)
+    external = bool(args.docs)
+    if external != bool(args.questions):
+        print("--docs and --questions go together. Nothing was sent.")
+        return 2
+    out_path = args.out or str(EXTERNAL_REPORT if external else REPORT)
+    budget = args.max_texts or (EXTERNAL_TEXT_BUDGET if external else EMBED_TEXT_BUDGET)
+    params = None
+    if external:
+        try:
+            params = json.loads(Path(args.params_from).read_text(encoding="utf-8"))["chosen_params"]
+            assert params
+        except (OSError, KeyError, ValueError, AssertionError):
+            print(f"No fixed thresholds in {args.params_from}: run the dev experiment first. Nothing was sent.")
+            return 2
 
     from app.config import Settings
     from app.storage import Store
@@ -269,7 +370,19 @@ def main(argv=None):
         settings = replace(base, data_path=Path(tmp) / "b1.db", llm_provider="off",
                            embedding_provider="gemini", embedding_model=os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001"))
         store = Store(settings.data_path)
-        cases = load_cases()
+        if external:
+            from scripts import blind_eval as be
+            try:
+                docs, _ = be.load_documents(args.docs, args.category)
+                cases = be.resolve_refs(be.validate_cases(be.load_questions(args.questions)), docs)
+            except (be.InputError, OSError, ValueError) as exc:
+                print(f"Input refused: {exc}. Nothing was sent.")
+                return 2
+            store.delete_source("seed")           # only the evaluator's documents
+            for source in sorted({d["source"] for d in docs}):
+                store.apply([{k: v for k, v in d.items() if k != "source"} for d in docs if d["source"] == source], source=source)
+        else:
+            cases = load_cases()
         planned = plan_texts(store.documents(), cases)
         texts = planned["texts"]
         from app import gemini
@@ -284,12 +397,12 @@ def main(argv=None):
         if args.dry_run:
             print("Dry run: nothing was sent.")
             return 0
-        if len(new) > EMBED_TEXT_BUDGET:
-            print(f"Refusing: {len(new)} new texts exceed the budget of {EMBED_TEXT_BUDGET}. Nothing was sent.")
+        if len(new) > budget:
+            print(f"Refusing: {len(new)} new texts exceed the budget of {budget}. Nothing was sent.")
             return 2
         if args.run:
             if os.environ.get("GEMINI_CONFIRM_FREE_TIER", "").lower() != "yes" or not os.environ.get("GEMINI_API_KEY"):
-                print("Set GEMINI_API_KEY and GEMINI_CONFIRM_FREE_TIER=yes (run_gemini_live.ps1 -Task embedding-dev does this). Nothing was sent.")
+                print("Set GEMINI_API_KEY and GEMINI_CONFIRM_FREE_TIER=yes (run_gemini_live.ps1 does this). Nothing was sent.")
                 return 2
             gemini.reset_budget()
         try:
@@ -302,16 +415,36 @@ def main(argv=None):
             return 1
         vectors = dict(zip(texts, vectors_list))
         made = gemini.requests_made() if args.run else 0
-        report = {"observed_at_utc": datetime.now(timezone.utc).isoformat(), "experiment": "B1 embedding on DEV data",
-                  "embedding_model": settings.embedding_model, "data": "synthetic only; dev + near-miss questions; no holdout",
-                  "texts": len(texts), "new_texts": len(new), "requests_made": made,
-                  "caveat": "Similarity and matching sentences show relevance, not truth. Dev is small (65 cases) and was "
-                            "written by the same person as the holdout. A positive result still needs the locked holdout.",
-                  **analyse(store, cases, vectors, planned["spans"], made if args.run else None)}
-    out = Path(args.out)
+        if external:
+            report = {"observed_at_utc": datetime.now(timezone.utc).isoformat(),
+                      "experiment": "embedding on an EXTERNAL set, thresholds fixed from the dev experiment",
+                      "embedding_model": settings.embedding_model, "documents": len(store.documents()), "questions": len(cases),
+                      "document_files": [Path(p).name for p in args.docs], "questions_file": Path(args.questions).name,
+                      "texts": len(texts), "new_texts": len(new), "requests_made": made,
+                      "caveat": "Similarity and matching sentences show relevance, not truth. One external set by one author: "
+                                "a pass would justify a sealed confirmation run, not use. The set is no longer blind once its failures drive a fix.",
+                      **analyse_external(store, cases, vectors, planned["spans"], params, made if args.run else None)}
+        else:
+            report = {"observed_at_utc": datetime.now(timezone.utc).isoformat(), "experiment": "B1 embedding on DEV data",
+                      "embedding_model": settings.embedding_model, "data": "synthetic only; dev + near-miss questions; no holdout",
+                      "texts": len(texts), "new_texts": len(new), "requests_made": made,
+                      "caveat": "Similarity and matching sentences show relevance, not truth. Dev is small (65 cases) and was "
+                                "written by the same person as the holdout. A positive result still needs the locked holdout.",
+                      **analyse(store, cases, vectors, planned["spans"], made if args.run else None)}
+    out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     d = report["decision"]
+    if external:
+        r, a = report["ranking_before_the_gate"], report["after_the_gate"]
+        print(f"before the gate (embedding alone): top1 {r['top1']}, top3 {r['top3']}, top5 {r['top5']}, MRR {r['mrr']}")
+        for name, m in (("lexical only", a["lexical_only"]), ("lexical + semantic", a["lexical_plus_semantic"])):
+            print(f"after the gate, {name}: {m['hits']}/{m['positives']} hits, {m['leaks']} unanswerable questions given a source")
+        print(f"semantic gained {len(report['moved']['gained'])}, displaced {len(report['moved']['lost'])}, "
+              f"added sources to {len(report['moved']['new_unsupported_sources'])} unanswerable question(s)")
+        print("hybrid allowed by the rule:", d["enable_hybrid_allowed"], "| unmet:", d["unmet"] or "none")
+        print(f"report: {out}")
+        return 0
     print(f"lexical only: {report['lexical_only']['hits']}/{report['lexical_only']['positives']} hits, "
           f"{report['lexical_only']['leaks']} leaks, synonym {report['lexical_only']['synonym_hits']}/{report['lexical_only']['synonym_total']}")
     if report["chosen_params"]:

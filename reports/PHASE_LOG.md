@@ -264,6 +264,14 @@ Re-scoring the SAME v4.1 outputs with the fixed measurement: 72/124 -> 76/124 pa
 - Typos toward brand/model words (capitalised, >= 4 letters or with digits): up to 2 edits when exactly one is that close ("mota" -> "motora"); ordinary syllables still never ("vang" -> "van").
 - Tried and REVERTED: answering private-data questions from policy documents by their cue words alone (U03 regressed: three policies matched).
 **Result on the trial (same files): 55/103 -> 64/103 source found, false abstention 48 -> 39, answers correct 36/54 -> 42/54, all checks 72 -> 85/124 pass, no false claim 21/21.** Dev 40/52 (39), near-miss 0/12, legacy unchanged, 372 tests pass.
+**Semantic experiment on the external trial: PREPARED, NOT RUN (status NOT VERIFIED).** `scripts/embedding_experiment.py --docs ... --questions ...`
+reads the evaluator's files (same loaders and validation as blind_eval), embeds documents + sentences + questions (219 texts, 28 requests
+for the trial set; cache, `--dry-run`, `--cache-only`, text budget 400, launcher hard limits 45 requests / 260 texts), and measures:
+(1) BEFORE the gate: embedding-only ranking of the expected documents (top 1/3/5, MRR, per group); (2) AFTER the gate: lexical vs
+lexical + `gate.admit_semantic` with thresholds FIXED from the dev experiment (never selected on the trial), including what the semantic
+channel gained, displaced, and which unanswerable questions it gave a source (a `premise_mismatch` correction is not counted as a leak);
+(3) score separation. Pre-registered rule: Hit@3 gain >= 15 points, zero added unsupported sources, nothing displaced, <= 45 requests;
+a pass would only justify a sealed confirmation run. `run_gemini_live.ps1 -Task embedding-external -Docs ... -Questions ...`.
 **What is NOT fixable lexically, and what is missing to verify semantic retrieval:** 25/25 `synonym_need` still 0 (plus most remaining policy paraphrases:
 "nộp", "đổi ý", "thanh toán sau lúc giao"): the question shares no words with the document. B1 (dev, 151 texts) showed the right
 document ranks first but absolute similarity cannot separate it from unanswerable questions. Missing: (1) an embedding run on THIS trial

@@ -144,6 +144,84 @@ def test_the_decision_rule_reports_every_unmet_condition():
     assert ex.decide(lexical, None, None, {}, 18)["enable_hybrid_allowed"] is False
 
 
+# ---- external set: the evaluator's files, thresholds fixed beforehand ---------------------------------------------------
+FIXED = {"tau": 0.7, "tau_span": 0.7, "z_min": 3.0, "delta": 0.05, "gap_min": 0.02}
+
+
+@pytest.fixture()
+def external(tmp_path):
+    (tmp_path / "docs.json").write_text(json.dumps([
+        {"id": f"E-{t}", "title": f"Item {t}", "category": "product",
+         "content": f"Item {t} is described here in one plain sentence about {t}."} for t in TOPICS], ensure_ascii=False), encoding="utf-8")
+    (tmp_path / "q.json").write_text(json.dumps({"cases": [
+        {"id": "S1", "group": "synonym_need", "question": "qqq wxyz amberish need", "type": "hit", "ids": ["E-amber"]},
+        {"id": "S2", "group": "synonym_need", "question": "rrr wxyz birchish need", "type": "hit", "ids": ["E-birch"]},
+        {"id": "N1", "group": "unsupported", "question": "totally unrelated qqq", "type": "none"},
+        {"id": "N2", "group": "near_miss", "question": "almost cedar qqq", "type": "none"}]}), encoding="utf-8")
+    (tmp_path / "params.json").write_text(json.dumps({"chosen_params": FIXED}), encoding="utf-8")
+    return tmp_path
+
+
+def ext_args(d, *extra):
+    return ["--docs", str(d / "docs.json"), "--questions", str(d / "q.json"), "--params-from", str(d / "params.json"),
+            "--out", str(d / "out.json"), *extra]
+
+
+def test_external_dry_run_counts_the_evaluators_texts_and_sends_nothing(external, capsys):
+    assert ex.main(["--dry-run", *ext_args(external)]) == 0
+    out = capsys.readouterr().out
+    assert "texts: " in out and "documents 6" in out and "questions 4" in out and "Dry run" in out
+
+
+def test_external_inputs_are_checked_before_anything_is_sent(external, capsys, tmp_path):
+    assert ex.main(["--run", "--docs", str(external / "docs.json")]) == 2                      # no questions
+    assert ex.main(["--dry-run", *ext_args(external)[:4], "--params-from", str(tmp_path / "none.json")]) == 2   # no fixed thresholds
+    (external / "bad.json").write_text(json.dumps([{"id": "X", "question": "ok question", "type": "hit"}]), encoding="utf-8")
+    assert ex.main(["--dry-run", "--docs", str(external / "docs.json"), "--questions", str(external / "bad.json"),
+                    "--params-from", str(external / "params.json")]) == 2
+    assert ex.main(["--run", *ext_args(external)]) == 2                                        # no key / confirmation
+    assert ex.main(["--run", *ext_args(external, "--max-texts", "3")]) == 2                    # over the text budget
+    assert "Nothing was sent" in capsys.readouterr().out
+
+
+def test_external_analysis_from_cached_vectors_uses_the_fixed_thresholds_and_reports_both_stages(external, tmp_path, monkeypatch):
+    from scripts import blind_eval as be
+    docs, _ = be.load_documents([external / "docs.json"])
+    cases = be.resolve_refs(be.validate_cases(be.load_questions(external / "q.json")), docs)
+    store = Store(tmp_path / "s.db")
+    store.delete_source("seed")
+    store.apply([{k: v for k, v in d.items() if k != "source"} for d in docs], source="docs")
+    plan = ex.plan_texts(store.documents(), cases)
+    vectors = {}
+    for d in store.documents():
+        topic = d["id"][2:]
+        vectors[ex.doc_text(d)] = vec(**{topic: 1.0})
+        for s in plan["spans"][d["id"]]:
+            vectors[s] = vec(**{topic: 0.95, "noise": 0.1})
+    qv = {"S1": vec(amber=0.9, noise=0.1), "S2": vec(birch=0.9, noise=0.1), "N1": vec(other=1.0), "N2": vec(cedar=0.5, other=0.8)}
+    for c in cases:
+        vectors[c["question"]] = qv[c["id"]]
+    EmbeddingCache(gemini.CACHE_PATH).put_many("gemini-embedding-001", vectors)
+    assert ex.main(["--cache-only", *ext_args(external)]) == 0
+    report = json.loads((external / "out.json").read_text(encoding="utf-8"))
+    assert report["params"] == FIXED                                           # not selected on these data
+    assert report["ranking_before_the_gate"]["top1"] == "2/2" and report["ranking_before_the_gate"]["mrr"] == 1.0
+    a = report["after_the_gate"]
+    assert a["lexical_only"]["hits"] == 0 and a["lexical_plus_semantic"]["hits"] == 2 and a["lexical_plus_semantic"]["leaks"] == 0
+    assert [m["id"] for m in report["moved"]["gained"]] == ["S1", "S2"] and not report["moved"]["new_unsupported_sources"]
+    assert report["requests_made"] == 0 and report["decision"]["hit_gain_points"] == 100.0 and "one author" in report["caveat"]
+
+
+def test_semantic_that_adds_a_source_to_an_unanswerable_question_fails_the_rule(mini):
+    store, vectors, spans = mini
+    cases = [{"id": "S1", "group": "synonym_need", "type": "hit", "ids": ["X-amber"], "question": "qqq wxyz amberish need"},
+             {"id": "N1", "group": "unsupported", "type": "none", "question": "lookalike qqq"}]
+    vectors = {**vectors, cases[0]["question"]: vec(amber=0.9, noise=0.1), cases[1]["question"]: vec(amber=0.9, noise=0.1)}
+    report = ex.analyse_external(store, cases, vectors, spans, FIXED)
+    assert [m["id"] for m in report["moved"]["new_unsupported_sources"]] == ["N1"]
+    assert not report["decision"]["enable_hybrid_allowed"] and any("(b)" in r for r in report["decision"]["unmet"])
+
+
 def test_sentences_are_split_for_evidence_spans():
     text = "Short. Giá niêm yết 450.000 VND cho bản tiêu chuẩn; bảo hành 12 tháng theo chính sách. Thêm một câu đủ dài để làm bằng chứng."
     spans = ex.split_sentences(text)

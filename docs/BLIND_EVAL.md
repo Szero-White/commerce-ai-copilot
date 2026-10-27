@@ -34,5 +34,13 @@ Files that are unusable (unknown type, `hit` without `ids`, duplicate id, an `@S
 ## 3. Results (`--out-dir`, default `reports/blind_eval/`)
 `results.csv` and `results.jsonl` (one row per question) and `summary.json`. Per question: `source_found`, `answer_correct` (only where you gave `must_contain` / `must_not_contain`), `refused_correctly` (for `none` cases), `abstained`, the returned ids, the answer text, and `flags` (hallucination risks): a source returned for a question you marked unanswerable, an excluded document returned, forbidden text in the answer, an answer that fails the evidence check (ids, numbers, promises).
 
+## 3b. Embedding experiment on the same files (needs the owner's key; free tier)
+```powershell
+python -m scripts.embedding_experiment --dry-run --docs docs.json --questions questions.json     # counts only, no key, no network
+powershell -NoProfile -ExecutionPolicy Bypass -File .\run_gemini_live.ps1 -Task embedding-external -Docs docs.json -Questions questions.json
+python -m scripts.embedding_experiment --cache-only --docs docs.json --questions questions.json  # re-analyse from the cache, sends nothing
+```
+It reports, separately: how well the embedding alone ranks the expected documents (top 1/3/5, before the gate) and what the semantic channel adds or breaks after the gate, using thresholds fixed on the dev set (`--params-from`), never chosen on your data. Only send files that are safe to send to Google.
+
 ## 4. What the numbers mean
 The run is offline, so the answer is quoted document text: `answer_correct` checks the facts you listed, not language quality, and an LLM answer needs a human rubric (see `tag`). Use a **new** set for each measurement: once the system has been changed because of a set's failures, that set is no longer blind. Keep question and expectation authorship separate from whoever changes the code.

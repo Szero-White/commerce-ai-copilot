@@ -22,9 +22,15 @@
       documents, their sentences and the DEV questions (never the holdout); no text generation (LLM_PROVIDER=off);
       hard limits 30 requests and 180 texts; results are cached, so a rerun costs nothing.
 
+  -Task embedding-external -Docs <files> -Questions <file>: the same embedding experiment on documents and questions written by
+      an evaluator (see docs/BLIND_EVAL.md). Thresholds are the ones fixed on the dev set, never chosen on these data.
+      Reports before-the-gate ranking (top 1/3/5) and after-the-gate safety. About 220 texts / 28 requests for the 28-document,
+      124-question trial set; hard limits 45 requests and 260 texts; no text generation; results are cached.
+
   -SelfTest: no key prompt, no network. Uses a fake key to prove the masking and clean-up logic.
 #>
-param([switch]$SelfTest, [string]$Model = 'gemini-3.5-flash-lite', [ValidateSet('smoke', 'embedding-dev')][string]$Task = 'smoke')
+param([switch]$SelfTest, [string]$Model = 'gemini-3.5-flash-lite', [ValidateSet('smoke', 'embedding-dev', 'embedding-external')][string]$Task = 'smoke',
+      [string[]]$Docs = @(), [string]$Questions = '')
 
 # Only a model NAME is accepted here; app\gemini.py still refuses anything outside its free-tier allowlist.
 if ($Model -notmatch '^gemini-[a-z0-9.\-]+$') { Write-Host 'Invalid -Model value.' -ForegroundColor Yellow; exit 2 }
@@ -35,15 +41,22 @@ $python = Join-Path $root '.venv\Scripts\python.exe'
 $names = @('GEMINI_API_KEY', 'LLM_PROVIDER', 'EMBEDDING_PROVIDER', 'GEMINI_MODEL', 'EMBEDDING_MODEL',
            'GEMINI_EMBEDDING_MODEL', 'GEMINI_CONFIRM_FREE_TIER', 'GEMINI_MAX_REQUESTS', 'GEMINI_MAX_EMBED_TEXTS',
            'PYTHONIOENCODING', 'PYTHONWARNINGS', 'PYTHONDONTWRITEBYTECODE')
-$module = if ($Task -eq 'embedding-dev') { 'scripts.embedding_experiment' } else { 'scripts.live_eval' }
+$isEmbedding = $Task -in @('embedding-dev', 'embedding-external')
+$module = if ($isEmbedding) { 'scripts.embedding_experiment' } else { 'scripts.live_eval' }
 $moduleFile = ($module -replace '^scripts\.', 'scripts\') + '.py'
 
 # Arguments that follow the python executable for a task. An explicit string[] (never a value that PowerShell can unroll
 # into a scalar) so that --run is always passed for the embedding experiment, which refuses to run without it.
-function Get-TaskArguments([string]$TaskName) {
+function Get-TaskArguments([string]$TaskName, [string[]]$DocFiles = @(), [string]$QuestionsFile = '') {
     $list = New-Object System.Collections.Generic.List[string]
     $list.Add('-m')
-    if ($TaskName -eq 'embedding-dev') { $list.Add('scripts.embedding_experiment'); $list.Add('--run') }
+    if ($TaskName -in @('embedding-dev', 'embedding-external')) {
+        $list.Add('scripts.embedding_experiment'); $list.Add('--run')
+        if ($TaskName -eq 'embedding-external') {
+            $list.Add('--docs'); foreach ($f in $DocFiles) { $list.Add($f) }
+            $list.Add('--questions'); $list.Add($QuestionsFile)
+        }
+    }
     else { $list.Add('scripts.live_eval') }
     return , $list.ToArray()
 }
@@ -55,6 +68,10 @@ $exitCode = 1
 try {
     if (-not (Test-Path $python)) { throw "Missing $python. Create the project .venv first (see README)." }
     if (-not (Test-Path (Join-Path $root $moduleFile))) { throw "$moduleFile not found." }
+    if ($Task -eq 'embedding-external') {
+        if ($Docs.Count -eq 0 -or [string]::IsNullOrWhiteSpace($Questions)) { throw 'embedding-external needs -Docs <files> and -Questions <file>.' }
+        foreach ($f in @($Docs) + @($Questions)) { if (-not (Test-Path $f)) { throw "File not found: $f" } }
+    }
 
     if ($SelfTest) {
         $plain = 'SELFTEST-FAKE-KEY-0123456789abcdef'
@@ -64,6 +81,9 @@ try {
         Write-Host 'This will send ONLY synthetic catalogue/policy text and demo questions to the Gemini API'
         if ($Task -eq 'embedding-dev') {
             Write-Host '(embedding experiment on DEV questions: about 150 texts / 19 embedding requests, no text generation; hard limit 30 requests).'
+        } elseif ($Task -eq 'embedding-external') {
+            Write-Host "(embedding experiment on YOUR files $($Docs -join ', ') / ${Questions}: no text generation; hard limits 45 requests, 260 texts)."
+            Write-Host 'The files must be synthetic or otherwise safe to send to Google: free-tier content may be used by the provider.'
         } else {
             Write-Host "(smoke test: model $Model only, about 7 requests, nothing is embedded; hard limit 40)."
         }
@@ -85,10 +105,10 @@ try {
     $env:GEMINI_EMBEDDING_MODEL = 'gemini-embedding-001'
     $env:GEMINI_CONFIRM_FREE_TIER = 'yes'
     $env:GEMINI_MAX_REQUESTS = '40'
-    if ($Task -eq 'embedding-dev') {
+    if ($isEmbedding) {
         $env:LLM_PROVIDER = 'off'             # embeddings only: no text is generated
-        $env:GEMINI_MAX_REQUESTS = '30'
-        $env:GEMINI_MAX_EMBED_TEXTS = '180'
+        $env:GEMINI_MAX_REQUESTS = if ($Task -eq 'embedding-external') { '45' } else { '30' }
+        $env:GEMINI_MAX_EMBED_TEXTS = if ($Task -eq 'embedding-external') { '260' } else { '180' }
     }
     $env:PYTHONIOENCODING = 'utf-8'
     $env:PYTHONWARNINGS = 'ignore'
@@ -101,15 +121,16 @@ try {
             & $python -c "import os; print('child sees key:', os.environ['GEMINI_API_KEY'])" 2>&1 |
                 ForEach-Object { "$_".Replace($plain, '***') }
             # The command line of each task, as a child process receives it. No module is started, so no network is used.
-            foreach ($case in @(@('smoke', 'scripts.live_eval', ''), @('embedding-dev', 'scripts.embedding_experiment', '--run'))) {
-                [string[]]$taskArgs = Get-TaskArguments $case[0]
+            foreach ($case in @(@('smoke', 'scripts.live_eval', ''), @('embedding-dev', 'scripts.embedding_experiment', '--run'),
+                                @('embedding-external', 'scripts.embedding_experiment', '--run --docs a.csv b.md --questions q.json'))) {
+                [string[]]$taskArgs = Get-TaskArguments $case[0] @('a.csv', 'b.md') 'q.json'
                 $seen = (& $python -c "import sys; print(' '.join(sys.argv[1:]))" @taskArgs 2>&1 | Out-String).Trim()
                 $expected = ("-m $($case[1]) $($case[2])").Trim()
                 if ($seen -eq $expected) { Write-Host "[self-test] task $($case[0]): arguments '$seen': OK" }
                 else { Write-Host "[self-test] task $($case[0]): got '$seen', expected '$expected': FAIL" -ForegroundColor Red }
             }
         } else {
-            [string[]]$taskArgs = Get-TaskArguments $Task
+            [string[]]$taskArgs = Get-TaskArguments $Task $Docs $Questions
             & $python @taskArgs 2>&1 | ForEach-Object { "$_".Replace($plain, '***') }
         }
         $exitCode = $LASTEXITCODE
@@ -137,7 +158,7 @@ if ($SelfTest) {
 }
 
 Write-Host ''
-$reportFile = if ($Task -eq 'embedding-dev') { 'reports\b1_embedding_dev.json' } else { 'reports\live_eval_gemini_smoke.json' }
+$reportFile = switch ($Task) { 'embedding-dev' { 'reports\b1_embedding_dev.json' } 'embedding-external' { 'reports\b1_embedding_external.json' } default { 'reports\live_eval_gemini_smoke.json' } }
 if ($exitCode -eq 0) {
     Write-Host "Run finished. Report: $reportFile (contains no key). Tell Claude Code it is ready." -ForegroundColor Green
 } else {
