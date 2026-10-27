@@ -275,8 +275,11 @@ class Store:
             if cached and cached[0] == version:
                 return cached[1]
             rows = [(r[0], r[1]) for r in cx.execute("SELECT title,content FROM documents")]
+            product_titles = [r[0] for r in cx.execute("SELECT title FROM documents WHERE category='product'")]
         texts = [t + " " + c for t, c in rows]
-        data = {"lexicon": Lexicon(texts, known=SYNONYMS), "tokens": [normalize(t).split() for t in texts]}
+        # Only products are "things" a follow-up can point at; policy titles ("Bảo hành") are topics.
+        data = {"lexicon": Lexicon(texts, known=SYNONYMS, titles=product_titles),
+                "tokens": [normalize(t).split() for t in texts]}
         self._cached = (version, data)
         return data
 
@@ -298,16 +301,37 @@ class Store:
             trace["gate_rejected"] = rejected
         return _verified_first(found)[:limit]
 
-    def fts_search(self, query, limit=12, trace=None):
-        """Lexical candidates for `query`. `trace` (a dict) receives how the question was read."""
+    def analyze(self, query):
+        return analyze(query, self._corpus()["lexicon"])
+
+    def _only(self, ids, analysis, trace=None):
+        """The given documents, if they pass the hard constraints of the question ("tell me about that one")."""
+        found = []
+        for doc_id in ids:
+            doc = self.document(doc_id)
+            if not doc:
+                continue
+            text = doc["title"] + " " + doc["content"]
+            verdict = check_document(analysis, text, normalize(text).split())
+            if verdict.admitted:
+                found.append({**doc, **({"condition_status": verdict.condition} if verdict.condition else {})})
+        return found
+
+    def fts_search(self, query, limit=12, trace=None, only=None):
+        """Lexical candidates for `query`. `trace` (a dict) receives how the question was read.
+
+        `only` restricts the search to those document ids: a follow-up question that points at one of them.
+        """
         corpus = self._corpus()
         # Words are classified against the vocabulary of the documents themselves (see query.py).
         analysis = analyze(query, corpus["lexicon"])
         if trace is not None:
             trace.update(analysis.trace())
         terms, accented = analysis.terms, analysis.accented
-        if analysis.needs_referent:
+        if analysis.needs_referent and only is None:
             return []   # "that one" with no earlier turn to point at: asking which one is the caller's job
+        if only is not None and not terms:
+            return self._only(only, analysis, trace)
         if not terms:
             # "Which products do you sell?" / "anything under 500k?": nothing to match by word, so look at the products.
             return self._catalogue(analysis, limit, trace) if analysis.catalog or analysis.conditions else []
@@ -315,10 +339,14 @@ class Store:
         # diacritic-free query word may match loosely.
         wanted = list(dict.fromkeys(w for term in terms + analysis.soft for w in (term,) + SYNONYMS.get(term, ())))
         expression = " OR ".join('"' + w + '"' + ("*" if _inflectable(w) else "") for w in wanted)
+        scope, scope_args = "", ()
+        if only is not None:
+            scope, scope_args = f" AND d.id IN ({','.join('?' * len(only))})", tuple(only)
         with self.connect() as cx:
-            rows = cx.execute("""SELECT d.*,bm25(document_fts) AS fts_score
+            rows = cx.execute(f"""SELECT d.*,bm25(document_fts) AS fts_score
                 FROM document_fts JOIN documents d ON document_fts.doc_id=d.id
-                WHERE document_fts MATCH ? ORDER BY fts_score LIMIT ?""", (expression, limit * 3)).fetchall()
+                WHERE document_fts MATCH ?{scope} ORDER BY fts_score LIMIT ?""",
+                (expression, *scope_args, limit * 3)).fetchall()
             tokenized = corpus["tokens"]
             df = {t: sum(bool(_positions(t, d)) for d in tokenized) for t in terms}
             # Rare or unknown words carry more weight than words found in most documents.

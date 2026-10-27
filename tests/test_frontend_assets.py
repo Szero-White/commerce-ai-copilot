@@ -96,3 +96,35 @@ def test_navigation_collapses_for_tablets_and_the_phone_menu_is_compact():
     phone = css.split("@media (max-width:700px)")[1]
     assert "min-height: 60px" in phone and "flex-direction: column" in phone
 
+
+# --- Multi-turn must not touch the accepted layout: only web/app.js may change -----------------------------------------------
+import hashlib
+
+ACCEPTED_LAYOUT = {   # sha256 of the files as accepted in real Chrome (line endings normalised); update ONLY for a deliberate UI change
+    "index.html": "9ed76d04c84d1996c14c4bfd9f35b67f6aecf91ff0e2695c48e77b8ef7cdc9dd",
+    "style.css": "8e7c357b181a5279af47d2b1ff1c89197942458f34421dc211013ccf347ec24d",
+    "styles/agent-support.css": "79ff70fd664dca6d810b2be2f4bebeecf146891a9e0ad963edfa095669f131b6",
+    "styles/assistant.css": "b2ffe31fb2090cf540aa1d73cd592b3612f0c29555292dd4fb22540db67b43be",
+    "styles/foundation.css": "fb8f50b0bea31a0385ddf77afccffc3c64b332ddf283e523042cca8123033d49",
+    "styles/overview.css": "7a9d8e29884bcb8421fcd9376e7eb8bdc3c64508db19ad5dc39d1f443f41db0d",
+    "styles/responsive-overrides.css": "c44cdea023331fd06a4cfb81d3fe7c1250a6da462306b8b99fcc22150d517534",
+    "styles/responsive.css": "0417bb50cb5c20e9febe187196e56380943b485651013b2dd63f3429e9d7cc80",
+    "styles/workflows.css": "f19851d914244bd1c32b675fd6eb44122951aa7a97c52c60d8834aff58727b6d",
+    "favicon.svg": "ae65b7e65c805f62a14a11b2835163294dbd1280823496bd606f51a15093b2fb",
+}
+
+
+def test_html_and_css_are_exactly_the_accepted_ones():
+    for name, expected in ACCEPTED_LAYOUT.items():
+        data = (ROOT / "web" / name).read_bytes().replace(b"\r\n", b"\n")
+        assert hashlib.sha256(data).hexdigest() == expected, f"{name} changed: multi-turn is a JavaScript-only change"
+
+
+def test_chat_sends_back_the_previous_turn_context_and_forgets_it_on_errors():
+    js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    assert "let lastTurnContext = null" in js
+    assert "{ question: q, turn_context: lastTurnContext }" in js
+    assert "lastTurnContext = d.turn_context || null" in js
+    assert js.count("lastTurnContext = null") >= 2          # initial value and reset in the error handler
+    assert "needs_clarification:" in js                      # the new mode has a Vietnamese label
+

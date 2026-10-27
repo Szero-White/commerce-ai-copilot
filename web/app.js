@@ -14,6 +14,7 @@ const pages = {
 // Vietnamese display labels. The raw API codes stay unchanged and are shown in "Mã kỹ thuật" detail lines / tooltips.
 const MODE_LABELS = {
   extractive_demo: 'Trích xuất tài liệu',
+  needs_clarification: 'Cần làm rõ câu hỏi',
   no_evidence: 'Không đủ bằng chứng',
   llm_rag_cited: 'LLM có dẫn nguồn',
   llm_citation_rejected_extractive: 'LLM bị từ chối kiểm tra',
@@ -182,6 +183,9 @@ function renderSources(items) {
     el.append(card);
   });
 }
+// The previous answer's `turn_context` (the documents it showed). Sent back unchanged with the next question so that
+// "nó cao bao nhiêu?" can be resolved; kept in memory only, so a page reload starts a fresh conversation.
+let lastTurnContext = null;
 async function ask(q) {
   q = q.trim();
   if (q.length < 3) return;
@@ -190,7 +194,9 @@ async function ask(q) {
   $('#question').value = '';
   $('#chat-form button').disabled = true;
   try {
-    const d = await api('/api/chat', { method: 'POST', body: JSON.stringify({ question: q }) });
+    const body = lastTurnContext ? { question: q, turn_context: lastTurnContext } : { question: q };
+    const d = await api('/api/chat', { method: 'POST', body: JSON.stringify(body) });
+    lastTurnContext = d.turn_context || null;
     pending.querySelector('.bubble').textContent = d.answer;
     renderSources(d.sources);
     $('#diag-mode').textContent = viLabel(MODE_LABELS, d.mode);
@@ -203,6 +209,7 @@ async function ask(q) {
     $('#diag-note').textContent = `${tokenNote(d)} Mã kỹ thuật: ${d.mode} · ${d.retrieval_mode}`;
     loadMetrics();
   } catch (e) {
+    lastTurnContext = null;
     pending.querySelector('.bubble').textContent = 'Có lỗi: ' + e.message;
     toast(e.message);
   } finally {

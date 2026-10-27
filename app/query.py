@@ -75,25 +75,45 @@ def states_stock(tokens: list[str], window: int = 3) -> bool:
 # "It", "that one", "the second one": words that point at something said before. A question made only of such a pointer
 # and an attribute ("how much is that one?") has no subject of its own; searching with just the attribute would return
 # every priced document. Without a previous turn to resolve the pointer the search must not run.
-DEICTIC_PAIRS = {("cai", "do"), ("cai", "nay"), ("cai", "kia"), ("san", "pham", "nay"), ("san", "pham", "do"),
-                 ("san", "pham", "kia"), ("mon", "nay"), ("mon", "do"), ("that", "one"), ("this", "one")}
-ORDINALS = {"hai", "ba", "bon", "nhat", "cuoi", "dau", "second", "third", "first", "last"}
-# Words that name a property of a thing rather than the thing.
-ATTRIBUTE_TERMS = {"gia", "price", "kich", "thuoc", "mau", "color", "colors", "colour", "bao", "hanh", "warranty",
-                   "chat", "lieu", "material", "size", "sizes", "rong", "dai", "cao", "day", "nang"}
+CLASSIFIERS = {("cai",), ("mau",), ("mon",), ("loai",), ("chiec",), ("san", "pham")}
+ORDINAL_WORDS = {"nhat": 1, "hai": 2, "ba": 3, "bon": 4, "tu": 4}
+DEMONSTRATIVES = {"nay", "do", "kia"}
+ENGLISH_ORDINALS = {"first": 1, "second": 2, "third": 3, "fourth": 4, "last": -1}
 
 
-def _deictic(items) -> bool:
+def _pointer(items):
+    """('pronoun'|'ordinal', n or None, words) when the question points at something said before, else None.
+
+    "nó", "cái đó", "sản phẩm này", "it", "that one" and "cái thứ hai", "mẫu đầu tiên", "the last one". An ordinal needs
+    a classifier ("cái", "mẫu", ...) because "thứ hai" alone is also Monday, and "đơn đầu tiên" is not "the first one".
+    `words` are the folded words of the pointer phrase; they are references, not things to look for.
+    """
     folded = [f for _, f, _ in items]
-    for n in (2, 3):
-        if any(tuple(folded[i:i + n]) in DEICTIC_PAIRS for i in range(len(folded) - n + 1)):
-            return True
-    for i, (raw, f, _) in enumerate(items):
-        if raw == "nó" or f == "kia":
-            return True
-        if raw == "thứ" and i + 1 < len(items) and items[i + 1][1] in ORDINALS:
-            return True
-    return False
+    n = len(folded)
+    for i in range(n):
+        for classifier in CLASSIFIERS:
+            width = len(classifier)
+            if tuple(folded[i:i + width]) != classifier or i + width >= n:
+                continue
+            nxt = folded[i + width:i + width + 3]
+            if nxt[0] == "thu" and len(nxt) > 1 and nxt[1] in ORDINAL_WORDS:
+                return "ordinal", ORDINAL_WORDS[nxt[1]], set(classifier) | {"thu", nxt[1]}
+            if nxt[0] == "dau":
+                return "ordinal", 1, set(classifier) | {"dau", "tien"}
+            if nxt[0] == "cuoi":
+                return "ordinal", -1, set(classifier) | {"cuoi", "cung"}
+            if nxt[0] in DEMONSTRATIVES:
+                return "pronoun", None, set(classifier) | {nxt[0]}
+    for i, f in enumerate(folded):
+        if f in ENGLISH_ORDINALS and i + 1 < n and folded[i + 1] in {"one", "product", "item"}:
+            return "ordinal", ENGLISH_ORDINALS[f], {f, folded[i + 1]}
+        if f in {"this", "that"} and i + 1 < n and folded[i + 1] in {"one", "product", "item"}:
+            return "pronoun", None, {f, folded[i + 1]}
+        if f == "it":
+            return "pronoun", None, {"it"}
+    if any(raw == "nó" for raw, _, _ in items):
+        return "pronoun", None, {"no"}
+    return None
 
 
 # Cues of a "what do you have?" question (used to prefer documents whose TITLE names the thing asked about).
@@ -104,9 +124,23 @@ DISCOVERY_RAW = {"bán"}
 class Lexicon:
     """Spellings used by the indexed documents: folded token -> raw spellings, and document frequency."""
 
-    def __init__(self, texts, known=()):
+    def __init__(self, texts, known=(), titles=()):
         self.raws: dict[str, dict[str, int]] = {}   # folded token -> {typed spelling: occurrences}
         self.df: dict[str, int] = {}
+        # Words that NAME things: they occur in a few document titles. A word repeated in many titles ("giả lập",
+        # "demo") is a label shared by the whole catalogue, not a name; one that is in no title describes a thing.
+        titles = list(titles)
+        in_titles: dict[str, int] = {}
+        raw_in_titles: dict[str, int] = {}
+        for title in titles:
+            for w in set(normalize(title).split()):
+                in_titles[w] = in_titles.get(w, 0) + 1
+            for r in set(raw_tokens(title)):
+                raw_in_titles[r] = raw_in_titles.get(r, 0) + 1
+        cap = max(2, 0.3 * len(titles))
+        self.title_words = {w for w, n in in_titles.items() if n <= cap} - STOP
+        self.title_raw_words = {r for r, n in raw_in_titles.items() if n <= cap}
+
         self.known = set(known)   # words the search layer understands without the documents (domain synonyms)
         texts = list(texts)
         self.size = len(texts)
@@ -119,6 +153,10 @@ class Lexicon:
                     seen.add(piece)
             for piece in seen:
                 self.df[piece] = self.df.get(piece, 0) + 1
+
+    def names_a_thing(self, folded: str, typed: str) -> bool:
+        """Is this query word one of the words that name a thing? Typed with diacritics it must match them too."""
+        return typed in self.title_raw_words if typed != folded else folded in self.title_words
 
     def has_other_reading(self, folded: str, function_forms) -> bool:
         """True when the documents use this spelling mostly in a reading other than the function word's."""
@@ -190,7 +228,8 @@ class Analysis:
     catalog: bool = False
     promoted: bool = False
     asks_stock: bool = False
-    needs_referent: bool = False                          # "how much is that one?" with nothing said before
+    needs_referent: bool = False                          # "how much is that one?": the subject is only a pointer
+    pointer: tuple | None = None                          # ('pronoun', None) | ('ordinal', n) found in the question
     names: list[str] = field(default_factory=list)       # unknown proper names / model codes in the question
     quantities: list = field(default_factory=list)       # numbers with units that must be stated exactly
     conditions: list = field(default_factory=list)       # comparisons computed from the documents' numbers
@@ -198,7 +237,7 @@ class Analysis:
     def trace(self) -> dict:
         return {"terms": self.terms, "soft_terms": self.soft, "corrections": self.corrections,
                 "dropped": [w for w, _ in self.dropped], "asks_stock": self.asks_stock,
-                "needs_referent": self.needs_referent,
+                "needs_referent": self.needs_referent, "pointer": list(self.pointer) if self.pointer else None,
                 "names": self.names, "quantities": [f"{q.value:g} {q.unit}" for q in self.quantities],
                 "conditions": [c.text for c in self.conditions],
                 "intent": "catalog" if self.catalog else "discovery" if self.discovery else "lookup"}
@@ -294,5 +333,12 @@ def analyze(query: str, lexicon: Lexicon) -> Analysis:
     result.soft = [t for t in dict.fromkeys(result.soft) if t not in result.terms]
     if not result.terms and result.soft:
         result.terms, result.soft, result.promoted = result.soft, [], True
-    result.needs_referent = _deictic(items) and all(t in ATTRIBUTE_TERMS or t in ORDINALS or t == "hai" for t in result.terms)
+    pointer = _pointer(items)
+    if pointer:
+        result.pointer = pointer[:2]
+        result.terms = [t for t in result.terms if t not in pointer[2]]     # references, not things to look for
+        result.soft = [t for t in result.soft if t not in pointer[2]]
+        # "how much is that one?", "does it have a lock?": what is left describes a thing. If it names one (a word of some
+        # title: "Bàn Oak này"), the question has its own subject and needs no earlier turn.
+        result.needs_referent = not any(lexicon.names_a_thing(t, result.accented.get(t, t)) for t in result.terms)
     return result

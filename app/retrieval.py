@@ -32,7 +32,7 @@ def index_vectors(store, settings):
         return {"enabled": False, "indexed": count, "reason": str(exc)}
 
 
-def search(store, settings, query, k=3, trace=None):
+def search(store, settings, query, k=3, trace=None, only=None):
     """Documents that passed the evidence gate, ranked. Semantic scores only re-rank them.
 
     Admission is decided by the gate (`Store.fts_search` -> `gate.check_document`), never by a similarity score: a
@@ -40,7 +40,7 @@ def search(store, settings, query, k=3, trace=None):
     describes when such a document could be admitted; it is not wired in until sentence vectors exist and the
     thresholds have been measured on real embeddings.
     """
-    lexical = store.fts_search(query, limit=15, trace=trace)
+    lexical = store.fts_search(query, limit=15, trace=trace, only=only)
     ranking = {}
     admitted = {d["id"]: d for d in lexical}
     documents = admitted

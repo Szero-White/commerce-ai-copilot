@@ -1,6 +1,7 @@
 """HTTP API + static portfolio UI. Local-first demo, not a production auth system."""
 import json
 from pathlib import Path
+from typing import Literal
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -15,8 +16,15 @@ from . import gemini
 from .support import triage_message
 
 
+class TurnContext(BaseModel):
+    """The previous answer's `turn_context`, echoed back by the client. Untrusted: ids are looked up, not believed."""
+    ids: list[str] = Field(default_factory=list,max_length=5)
+    kind: Literal["single","list","clarify","none"]="none"
+
+
 class Question(BaseModel):
     question: str = Field(min_length=3,max_length=600)
+    turn_context: TurnContext | None = None
 
 
 class AgentTask(BaseModel):
@@ -86,7 +94,7 @@ def create_app(data_path=None, settings=None):
 
     @app.post("/api/chat")
     def chat(body:Question):
-        return question_answer(store,settings,body.question)
+        return question_answer(store,settings,body.question,body.turn_context.model_dump() if body.turn_context else None)
 
     @app.post("/api/campaign")
     def campaign(body:Campaign):

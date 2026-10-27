@@ -102,3 +102,27 @@ Editing note: append with the Edit tool (UTF-8); PowerShell `Add-Content` mangle
   near-miss leaks 0/12 (1: the "Focus Pro" name case), legacy 31/31, 32/33, 18/18, 12/12 unchanged. Remaining failures are
   synonym_need 0/8 and a few paraphrases; they need meaning, not words.
 - Full suite: 301 passed.
+
+## Phase 6 — multi-turn on the real UI: PASS
+- Memory is ONE step deep and lives in the client: `/api/chat` accepts an optional `turn_context {ids (<=5), kind}` and every
+  response returns one. Nothing is stored server-side; no earlier text reaches a prompt. Ids are untrusted: each is looked up in
+  the DB, unknown ones are ignored, content always comes from the DB. `app/dialogue.py` + `Store.analyze/fts_search(only=)`.
+- Rules (never guess): "nó / cái này / sản phẩm đó / it" binds only when exactly ONE document was shown; "cái thứ hai / mẫu
+  đầu tiên / cái cuối cùng" binds only to a list/clarification (order = sources panel; multi-result extractive answers are now
+  numbered "1. [ID] ..."); anything else -> `mode=needs_clarification` with numbered options (answerable by an ordinal).
+  A question that names its own subject (a word of a few product titles) ignores the context. A bound follow-up the document
+  cannot answer says so, states which product it assumed, and keeps the subject. "thứ hai" alone (Monday) and "đơn đầu tiên"
+  are not pointers (a classifier like "cái/mẫu/sản phẩm" is required).
+- Subject detection uses PRODUCT titles only, rare words only (<= 30% of titles): policy titles ("Bảo hành") are topics, and
+  repeated words ("giả lập", "demo") label the whole catalogue. Two accent collisions found and fixed on the way: giá/giả
+  and cao/cáo (typed accents are compared with the raw title words).
+- Frontend: ONLY `web/app.js` changed (+8/-1: a `lastTurnContext` variable sent and refreshed per question, reset on error,
+  and one Vietnamese label for the new mode). `test_frontend_assets.py` now pins the sha256 of index.html, style.css, the 7 CSS
+  modules and favicon, so a layout change fails the suite.
+- Real Chrome (headless, CDP, server LLM off, fresh DB): 15/15 checks. Pronoun after one result; list -> "cái thứ hai";
+  pronoun after a list asks back with numbered options and "cái đầu tiên" answers it; page reload forgets; own-subject
+  questions ignore context; "Có bàn gì?" finds the desk; no overflow at 390 px; no JS errors / console errors / failed
+  requests. Screenshots inspected by eye (1366 and 390). Not tested: other browsers, touch, LLM-on output.
+- Limits: one previous turn only; no summary; no far references; the unaccented pronoun "no" is not recognised (only "nó");
+  Agent / Support / Campaign are single-turn. Metrics unchanged (dev 39/52, leaks 0/10, near-miss 0/12, legacy identical).
+- Full suite: 324 passed.
