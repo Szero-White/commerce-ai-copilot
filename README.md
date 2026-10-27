@@ -21,7 +21,15 @@
 | Real-model answers with citations (3 questions), negated policy preserved, injected instruction not repeated (1 case) | **Real, hosted, tiny sample** | same report; reviewer was an AI, not an independent human |
 | Tool-calling agent: 2 read-only tools, 3-turn loop, cited answer passed the validator | **Real, hosted, one task**; also mock-tested | same report |
 | Campaign LLM draft; the Ollama (local) LLM and agent paths | **Mock only** | calls are monkeypatched or go to a fake server; proves control flow, not model quality |
-| Embeddings (hosted, `gemini-embedding-001`): experiment on the dev questions only (151 texts, 19 requests) | **Real, hosted, dev data only: negative result** | The right document was rank 1 in 8/8 need-based questions, but similarity scores of questions the catalogue cannot answer overlap those of true matches, so no safe threshold admits documents by meaning (best: 1/8). **Hybrid stays OFF**; vectors only re-rank documents the gate already admitted. [Details](reports/PHASE_LOG.md) |
+| Embeddings (hosted, `gemini-embedding-001`) | **Real, hosted, small samples** | Dev set: the right document ranked first 8/8, but similarity alone cannot admit documents safely (best 1/8, negative). Independent trial (103 answerable questions): top-1 101/103, top-3 103/103; admitting by similarity alone added a source to 2 unanswerable questions, so a meaning-only match is used **only when the LLM verifies it** ("relevant is not sufficient"). Online check, 14 questions, real Gemini: 13/14 pass, no hallucination flag, both unsupported-attribute questions declined, 7 answers came from meaning-only matches; one answerable question was declined by the LLM (false abstention). **Off by default**; on only with `LLM_PROVIDER=gemini EMBEDDING_PROVIDER=gemini`. [Details](reports/PHASE_LOG.md) |
+
+**Online demo (Gemini, free tier, synthetic data only).** Key only in this process's environment:
+```powershell
+$env:LLM_PROVIDER='gemini'; $env:EMBEDDING_PROVIDER='gemini'; $env:GEMINI_API_KEY=Read-Host 'key'   # typed value is visible: use run_gemini_live.ps1 for a hidden prompt
+.venv\Scripts\python -m scripts.index_embeddings        # once: embeds the 15 documents and their sentences (about 75 texts, ~1.5 min)
+.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+Check `http://127.0.0.1:8000/api/health?probe=true`. Answers then show "LLM có dẫn nguồn"; a question whose documents do not state the asked fact is declined with no source.
 | Gemini answer quality after the v4 changes, faithfulness beyond 3 answers, agent reliability beyond 1 task, any local model | **NOT verified** | The only real LLM run (smoke, 7 requests) predates v4. See [live verification options](docs/LIVE_LLM_VERIFICATION_OPTIONS.md) |
 | LangChain / LlamaIndex / LangGraph, vector DB, Shopify / Ads APIs, auth, deployment | **Not implemented** | |
 
