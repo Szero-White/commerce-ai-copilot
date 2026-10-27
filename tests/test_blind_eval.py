@@ -68,13 +68,18 @@ def test_outputs_are_written_per_question_and_as_a_summary(files):
     assert "id,group,type,question" in (out / "results.csv").read_text(encoding="utf-8-sig").splitlines()[0]
 
 
-def test_a_source_for_an_unanswerable_question_is_flagged_as_a_hallucination_risk(files):
-    # Same data, but the evaluator marks a question the documents DO answer as unanswerable: the returned source is flagged.
-    cases = [{"id": "Z1", "question": "Ghế Quark Q1 bảo hành bao lâu?", "type": "none"}]
+def test_a_source_is_not_a_hallucination_unless_the_answer_asserts_something_forbidden(files):
+    # The evaluator marks questions the documents DO answer as unanswerable. Returning the source asserts nothing by itself:
+    # three outcomes are told apart (refused / sourced_no_assertion / hallucination).
+    cases = [{"id": "Z1", "question": "Ghế Quark Q1 bảo hành bao lâu?", "type": "none"},
+             {"id": "Z2", "question": "Ghế Quark Q1 bảo hành bao lâu?", "type": "none", "must_not_contain": ["12 tháng"]},
+             {"id": "Z3", "question": "Ghế Quark Q9 bảo hành bao lâu?", "type": "none"}]
     (files / "q2.json").write_text(json.dumps(cases, ensure_ascii=False), encoding="utf-8")
     assert be.main(["--docs", str(files / "products.csv"), "--questions", str(files / "q2.json"), "--out-dir", str(files / "o2")]) == 0
-    rec = json.loads((files / "o2" / "results.jsonl").read_text(encoding="utf-8").splitlines()[0])
-    assert not rec["pass"] and rec["flags"] and "unanswerable" in rec["flags"][0]
+    rec = {json.loads(l)["id"]: json.loads(l) for l in (files / "o2" / "results.jsonl").read_text(encoding="utf-8").splitlines()}
+    assert rec["Z1"]["outcome"] == "sourced_no_assertion" and rec["Z1"]["pass"] and not rec["Z1"]["refused_correctly"]
+    assert rec["Z2"]["outcome"] == "hallucination" and not rec["Z2"]["pass"] and "forbidden text" in rec["Z2"]["flags"][0]
+    assert rec["Z3"]["outcome"] == "refused" and rec["Z3"]["refused_correctly"] and rec["Z3"]["pass"]
 
 
 def test_the_real_database_and_the_seed_documents_are_not_involved(files):

@@ -20,6 +20,7 @@ document text, so "answer correct" only checks the facts you listed; it is not a
 import argparse
 import csv
 import json
+import re
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -160,11 +161,12 @@ def evaluate(docs, cases, with_seed=False):
             response = question_answer(store, settings, case["question"])
             latencies.append((time.perf_counter() - started) * 1000)
             base = qe.judge(case, response, normalize)
+            # A hallucination is an ASSERTION the documents do not support. Returning a source is not one: offline the answer is
+            # quoted document text, so it only asserts what the document says. Three outcomes are told apart:
+            #   refused                 no source returned (safe refusal)
+            #   sourced_no_assertion    a source returned for a question marked unanswerable, and nothing forbidden is said
+            #   hallucination           forbidden text, an excluded document, or an answer failing the evidence check
             flags = []
-            if base["type"] == "none" and base["leaked"]:
-                flags.append("source returned for a question marked unanswerable: " + ", ".join(base["leaked"]))
-            if base["type"] == "none_or_clarify" and not base["pass"]:
-                flags.append("source returned for an ambiguous question")
             if base.get("excluded_returned"):
                 flags.append("excluded document returned: " + ", ".join(base["excluded_returned"]))
             folded = " ".join(normalize(response["answer"]).split())
@@ -172,12 +174,18 @@ def evaluate(docs, cases, with_seed=False):
             if forbidden:
                 flags.append("forbidden text in the answer: " + ", ".join(forbidden))
             if response["sources"]:
-                problems = answer_problems(response["answer"], response["sources"])
+                # Leading list numbers ("1. [ID] ...") are layout, not claims.
+                body = "\n".join(re.sub(r"^\s*\d+\.\s+", "", line) for line in response["answer"].splitlines())
+                problems = answer_problems(body, response["sources"])
                 if problems:
                     flags.append("answer fails the evidence check: " + "; ".join(problems))
+            if base["type"] in ("none", "none_or_clarify"):
+                outcome = "refused" if base["pass"] else ("hallucination" if flags else "sourced_no_assertion")
+            else:
+                outcome = "hallucination" if flags else ("answered" if base["pass"] else "abstained" if base["abstained"] else "wrong_source")
             record = {"id": case["id"], "group": case["group"], "question": case["question"], "type": case["type"],
                       "mode": response["mode"], "returned": base["found"], "answer": response["answer"], "flags": flags,
-                      "needs_human_review": case.get("tag") == "llm_rubric"}
+                      "outcome": outcome, "needs_human_review": case.get("tag") == "llm_rubric"}
             if case["type"] == "hit":
                 record["source_found"] = base["retrieval_hit"]
                 record["abstained"] = base["abstained"]
@@ -186,8 +194,11 @@ def evaluate(docs, cases, with_seed=False):
                 elif case.get("must_not_contain"):
                     record["answer_correct"] = base["retrieval_hit"] and not forbidden
             else:
-                record["refused_correctly"] = base["pass"]
-            record["pass"] = base["pass"] and not flags and record.get("answer_correct", True)
+                record["refused_correctly"] = base["pass"]                 # strict: no source at all
+                record["no_false_claim"] = outcome in ("refused", "sourced_no_assertion")
+            # An unanswerable question passes when nothing unsupported is asserted (a refusal OR a source that asserts nothing).
+            ok = base["pass"] if base["type"] == "hit" else record["no_false_claim"]
+            record["pass"] = bool(ok) and not flags and record.get("answer_correct", True)
             records.append(record)
     return records, summarize(records, latencies, qe)
 
@@ -206,7 +217,9 @@ def summarize(records, latencies, qe):
         "source_found": qe.rate(sum(r["source_found"] for r in hits), len(hits)),
         "false_abstention": qe.rate(sum(r["abstained"] for r in hits), len(hits)),
         "answer_correct (only where must_contain / must_not_contain was given)": qe.rate(sum(r["answer_correct"] for r in with_answer), len(with_answer)),
-        "refused_correctly": qe.rate(sum(r["refused_correctly"] for r in refusals), len(refusals)),
+        "refused_correctly (strict: no source returned)": qe.rate(sum(r["refused_correctly"] for r in refusals), len(refusals)),
+        "no_false_claim (refused, or a source that asserts nothing unsupported)": qe.rate(sum(r["no_false_claim"] for r in refusals), len(refusals)),
+        "sourced_no_assertion": sum(r["outcome"] == "sourced_no_assertion" for r in records),
         "cases_with_hallucination_flags": qe.rate(sum(bool(r["flags"]) for r in records), len(records)),
         "all_checks_passed": qe.rate(sum(r["pass"] for r in records), len(records)),
         "needs_human_review": sum(r["needs_human_review"] for r in records),
@@ -221,8 +234,8 @@ def write_outputs(out_dir, records, summary, meta):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     (out / "results.jsonl").write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n", encoding="utf-8")
-    columns = ["id", "group", "type", "question", "source_found", "answer_correct", "refused_correctly", "abstained", "mode",
-               "returned", "flags", "pass"]
+    columns = ["id", "group", "type", "question", "outcome", "source_found", "answer_correct", "refused_correctly", "no_false_claim",
+               "abstained", "mode", "returned", "flags", "pass"]
     with (out / "results.csv").open("w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=columns)
         writer.writeheader()
@@ -254,9 +267,10 @@ def main(argv=None):
             "document_files": sources, "questions_file": Path(args.questions).name, "with_seed": args.with_seed,
             "config": {"llm": "off", "embedding": "off", "network": "none", "k": 3}}
     write_outputs(args.out_dir, records, summary, meta)
-    for key in ("source_found", "false_abstention", "refused_correctly", "cases_with_hallucination_flags", "all_checks_passed"):
-        v = summary[key]
-        print(f"{key}: {v['passed']}/{v['total']}")
+    for key, v in summary.items():
+        if isinstance(v, dict) and "passed" in v and key != "by_group":
+            print(f"{key}: {v['passed']}/{v['total']}")
+    print(f"sourced_no_assertion: {summary['sourced_no_assertion']}")
     for r in records:
         if not r["pass"]:
             print(f"  FAIL {r['id']} [{r['group']}] {r['question']} -> returned {r['returned'] or r['mode']}" + (f" | {r['flags'][0]}" if r["flags"] else ""))

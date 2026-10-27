@@ -32,17 +32,24 @@ def check_document(analysis, text: str, tokens: list[str], category: str | None 
         return Verdict(False, reason="an offer was asked and the document states none")
     if any(name not in present for name in analysis.names):
         return Verdict(False, reason="a name or model code in the question is not in the document")
-    if any(any(c.isdigit() for c in t) and t not in present for t in analysis.terms):
-        return Verdict(False, reason="a number or code in the question is not in the document")
-    if analysis.quantities and not exact_matches(analysis.quantities, text):
-        return Verdict(False, reason="a quantity with its unit is not stated in the document")
+    missing = [t for t in analysis.terms if any(c.isdigit() for c in t) and t not in present]
+    if any(not t.isdigit() for t in missing):
+        return Verdict(False, reason="a model code in the question is not in the document")   # H7 is not H6
+    # A number the question states but the document does not ("Tủ Harbor H6 có 8 ngăn?"). When the question names a thing
+    # this document describes, that is a premise the document CONTRADICTS: the document is returned flagged, so the answer
+    # can show the real figure. Without a named thing, or for a percentage / offer, it stays a refusal (a made-up "90% off").
+    premise = bool(missing) or bool(analysis.quantities and not exact_matches(analysis.quantities, text))
+    if premise and (analysis.asks_offer or not analysis.has_entity or any(q.family == "percent" for q in analysis.quantities)):
+        return Verdict(False, reason="a number or quantity in the question is not stated in the document")
     if analysis.asks_stock and not states_stock(tokens):
         return Verdict(False, reason="stock was asked and the document states no figure")
     if not analysis.conditions:
-        return Verdict(True)
+        return Verdict(True, "premise_mismatch" if premise else None)
     results = [evaluate(c, text) for c in analysis.conditions]
     if "no" in results:
         return Verdict(False, reason="a comparison condition is not met")
+    if premise:
+        return Verdict(True, "premise_mismatch")
     return Verdict(True, "satisfied" if set(results) == {"yes"} else "unverified")
 
 

@@ -90,7 +90,9 @@ def test_an_update_replaces_the_old_text_everywhere(db, tmp_path):
     assert result["updated"] == 1 and result["unchanged"] == 1
     now = answer(db, "Sofa Cumulus hai chỗ giá bao nhiêu?")["answer"]
     assert "5490000" in now and "6900000" not in now
-    assert ids(store, "sofa cumulus 6900000") == []                            # the old figure no longer matches anything
+    stale = store.fts_search("sofa cumulus 6900000")                            # a question quoting the OLD figure
+    assert [d.get("condition_status") for d in stale] == ["premise_mismatch"]   # flagged as contradicted, not confirmed
+    assert "6900000" not in stale[0]["content"] and "5490000" in stale[0]["content"]
     assert store.consistency_report()["ok"]
 
 

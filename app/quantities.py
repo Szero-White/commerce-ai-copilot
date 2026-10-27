@@ -25,7 +25,7 @@ _UNITS = [
     ("time", "week", 1.0, ["tuần", "tuan", "weeks", "week"]),
     ("time", "month", 1.0, ["tháng", "thang", "months", "month"]),
     ("time", "year", 1.0, ["năm", "nam", "years", "year"]),
-    ("time", "hour", 1.0, ["giờ", "gio", "hours", "hour"]),
+    ("time", "hour", 1.0, ["giờ", "gio", "tiếng", "tieng", "hours", "hour"]),
     ("weight", "g", 1000.0, ["kg"]),
     ("weight", "g", 1.0, ["g"]),
     ("volume", "ml", 1.0, ["ml"]),
@@ -36,7 +36,8 @@ _UNIT_ALT = "|".join(re.escape(w) for w in sorted(_UNIT_BY_WORD, key=len, revers
 _DIMS = rf"(?P<dims>(?:{NUM})(?:\s*[x×*]\s*(?:{NUM}))+)\s*(?P<dunit>{_UNIT_ALT})(?!\w)"
 _SINGLE = rf"(?P<num>{NUM})\s*(?P<unit>{_UNIT_ALT})(?!\w)"
 _PREFIX_CUR = rf"(?P<cur>usd|\$)\s*(?P<pnum>{NUM})"
-_QUANTITY = re.compile(f"{_DIMS}|{_PREFIX_CUR}|{_SINGLE}", re.I)
+_RANGE_Q = rf"(?P<rng>(?:{NUM})\s*[-–—]\s*(?:{NUM}))\s*(?P<runit>{_UNIT_ALT})(?!\w)"    # "72–118 cm"
+_QUANTITY = re.compile(f"{_DIMS}|{_RANGE_Q}|{_PREFIX_CUR}|{_SINGLE}", re.I)
 
 
 def _fold(word: str) -> str:
@@ -80,6 +81,10 @@ def extract(text: str) -> list[Quantity]:
             fam, unit, mult = _UNIT_BY_WORD[m.group("dunit").lower()]
             for n in re.findall(NUM, m.group("dims")):
                 found.append(Quantity(parse_number(n) * mult, fam, unit, _labels(text, m.start()), True, m.start(), m.end()))
+        elif m.group("rng"):
+            fam, unit, mult = _UNIT_BY_WORD[m.group("runit").lower()]
+            for n in re.findall(NUM, m.group("rng")):    # both ends carry the label written before the range
+                found.append(Quantity(parse_number(n) * mult, fam, unit, _labels(text, m.start()), False, m.start(), m.end()))
         elif m.group("cur"):
             fam, unit, mult = _UNIT_BY_WORD[m.group("cur").lower()]
             found.append(Quantity(parse_number(m.group("pnum")) * mult, fam, unit, _labels(text, m.start()), False, m.start(), m.end()))
@@ -89,8 +94,23 @@ def extract(text: str) -> list[Quantity]:
     return found
 
 
+SCENARIO_WORDS = {"don", "mua", "dat", "tong", "tri"}   # "đơn 2 triệu", "mua 4 triệu", "trị giá", "tổng": an order's size
+
+
+def cut_scenario_amounts(text: str):
+    """Money amounts that describe the customer's situation ("đơn 2 triệu") rather than a fact to look up.
+
+    They are parameters of the question ("what happens for an order this size?"), not claims the documents must repeat,
+    so they are cut out of the question. Returns the question without them.
+    """
+    spans = [(q.start, q.end) for q in extract(text) if q.family == "money" and SCENARIO_WORDS & set(q.labels[-3:])]
+    for start, end in sorted(spans, reverse=True):
+        text = text[:start] + " " + text[end:]
+    return text
+
+
 # ---- comparison conditions ------------------------------------------------------------------------------------------
-_LT = ["không quá", "khong qua", "tối đa", "toi da", "ít hơn", "it hon", "nhỏ hơn", "nho hon", "dưới", "duoi",
+_LT = ["không quá", "khong qua", "tối đa", "toi da", "ít hơn", "it hon", "nhỏ hơn", "nho hon", "thấp hơn", "thap hon", "dưới", "duoi",
        "under", "below", "less than", "at most", "up to"]
 _GT = ["tối thiểu", "toi thieu", "ít nhất", "it nhat", "lớn hơn", "lon hon", "nhiều hơn", "nhieu hon", "trên", "tren",
        "hơn", "hon", "over", "above", "more than", "at least"]

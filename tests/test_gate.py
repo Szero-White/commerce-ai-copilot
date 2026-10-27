@@ -117,6 +117,15 @@ def test_hybrid_search_does_not_add_documents_the_gate_rejected(vector_store, mo
 def test_hybrid_search_cannot_answer_what_the_gate_refuses(vector_store, monkeypatch):
     store, settings = vector_store
     monkeypatch.setattr(retrieval, "embed", lambda *_: [[1.0, 0.0]])
-    for question in ("quasar neutrino qubit zyzzyva", "Bàn Oak 120 còn hàng không?", "Bàn Oak 150 kích thước bao nhiêu?",
+    for question in ("quasar neutrino qubit zyzzyva", "Bàn Oak 120 còn hàng không?", "Bàn Oak 120 giảm 5% không?",
                      "Đèn bàn Focus Pro có mấy mức sáng?"):
         assert retrieval.search(store, settings, question)[0] == [], question
+
+
+def test_a_contradicted_number_returns_the_document_flagged_never_a_vector_match(vector_store, monkeypatch):
+    # Policy since the independent trial: "Bàn Oak 150 ..." names a product that exists but states a number the document
+    # contradicts, so the document is returned FLAGGED (the answer shows the real figure) instead of an abstention.
+    store, settings = vector_store
+    monkeypatch.setattr(retrieval, "embed", lambda *_: [[1.0, 0.0]])
+    found, _ = retrieval.search(store, settings, "Bàn Oak 150 kích thước bao nhiêu?", k=5)
+    assert [d["id"] for d in found] == ["PRD-101"] and found[0]["condition_status"] == "premise_mismatch"

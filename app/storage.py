@@ -363,13 +363,15 @@ class Store:
                     if t in accented and accented[t] not in doc_raw and not any(
                             s in tokens for s in SYNONYMS.get(t, ())):
                         where[t] = []  # typed with diacritics but only the loose spelling occurs
-                hits = [t for t in terms if where[t]]
-                numeric = [t for t in terms if t.isdigit()]
-                if len(terms) >= 3 and (len(hits) < 2 or len(hits) / len(terms) < 0.34):
+                # A number the document does not state is judged by the gate (a contradicted premise, or a made-up
+                # discount/size/price), not by word coverage: it is left out of the coverage below.
+                scored = [t for t in terms if not (t.isdigit() and not where[t])]
+                hits = [t for t in scored if where[t]]
+                if not scored:
                     continue
-                if any(not where[t] for t in numeric):
-                    continue  # Do not answer a made-up discount/size/price by loose keyword match.
-                if sum(weight[t] for t in hits) / sum(weight.values()) < MIN_COVERAGE:
+                if len(scored) >= 3 and (len(hits) < 2 or len(hits) / len(scored) < 0.34):
+                    continue
+                if sum(weight[t] for t in hits) / sum(weight[t] for t in scored) < MIN_COVERAGE:
                     continue
                 if not _near({t: where[t] for t in hits if not t.isdigit()}):
                     continue

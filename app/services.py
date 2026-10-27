@@ -67,6 +67,7 @@ def _ad_body(content):
 _CONDITION_NOTE = {
     "satisfied": " (đã so sánh số trong tài liệu: thỏa điều kiện)",
     "unverified": " (CHƯA xác nhận được điều kiện: tài liệu không nêu rõ thuộc tính này)",
+    "premise_mismatch": " (LƯU Ý: số liệu trong câu hỏi KHÁC với tài liệu; hãy đối chiếu số liệu của tài liệu)",
 }
 
 

@@ -84,7 +84,10 @@ def judge(case, response, normalize):
         out["citation_ok"] = bool(found) and cited <= set(found) and len(cited & expected) >= need
         out["pass"] = bool(out["retrieval_hit"])
     elif kind == "none":
-        leaked = sorted(set(found) - set(case.get("allow", ())))
+        # A source flagged "premise_mismatch" corrects a wrong number in the question (the answer shows the real figure);
+        # it supports nothing, so it is not a leak. Older code never sets the flag, so baseline numbers are unchanged.
+        corrections = {s["id"] for s in sources if s.get("condition_status") == "premise_mismatch"}
+        leaked = sorted(set(found) - set(case.get("allow", ())) - corrections)
         out["leaked"] = leaked
         out["pass"] = not leaked
     elif kind == "none_or_clarify":

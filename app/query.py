@@ -10,7 +10,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
-from .quantities import extract, parse_conditions
+from .quantities import cut_scenario_amounts, extract, parse_conditions
 
 MAX_TERMS = 10
 # Typo repair is only attempted when few words need it, otherwise the query is probably not about this catalogue.
@@ -33,7 +33,7 @@ giup xem tim san pham loai hang lau may nhu nay hom muon xin mua tren cac nhung 
 hoac neu thi de di ra vao what is the a an of in do you can i how much are there for to who tell me
 it be on at by with and or my your we this that does did will would should could any some about
 dau ap dung phai come get have has was were if because when while from just
-vay nhe nhi oi ha nha hen shop ben theo mon cai chiec no kia sao""".split())
+vay nhe nhi oi ha nha hen shop ben theo mon cai chiec no kia sao ko hok dc len""".split())   # ko/hok = không, dc = được (common abbreviations)
 
 # Function words that are ALSO spellings of content words once diacritics are dropped. The value lists the readings
 # (as typed, with diacritics) in which the word really is a function word. A word typed with diacritics that is not
@@ -48,7 +48,7 @@ FUNCTION_FORMS = {
     "nhu": {"như"}, "nay": {"này", "nay"}, "hom": {"hôm"}, "muon": {"muốn"}, "tren": {"trên"}, "cac": {"các"},
     "nhung": {"những", "nhưng"}, "se": {"sẽ"}, "rat": {"rất"}, "qua": {"quá"}, "hoac": {"hoặc"}, "neu": {"nếu"},
     "thi": {"thì"}, "di": {"đi"}, "vao": {"vào"}, "phai": {"phải"}, "ap": {"áp"}, "va": {"và"}, "la": {"là"},
-    "vay": {"vậy"}, "nhe": {"nhé"}, "nhi": {"nhỉ"}, "oi": {"ơi"}, "ben": {"bên"}, "bao": {"bao"}, "mon": {"món"}, "cai": {"cái"}, "chiec": {"chiếc"}, "no": {"nó", "no"},
+    "vay": {"vậy"}, "nhe": {"nhé"}, "nhi": {"nhỉ"}, "oi": {"ơi"}, "ben": {"bên"}, "bao": {"bao"}, "mon": {"món"}, "cai": {"cái"}, "chiec": {"chiếc"}, "no": {"nó", "no"}, "len": {"lên"},
 }
 # Accented question words whose unaccented spelling is a product word (tủ, đèn, tải).
 STOP_ACCENTED = {"mất", "từ", "đến", "tại"}
@@ -142,7 +142,8 @@ def _pointer(items):
 
 
 # "What are its features / details / description?": the frame of a request for information, not words to find in a document.
-FRAME_PAIRS = {("dac", "diem"), ("dac", "tinh"), ("thong", "tin"), ("chi", "tiet"), ("mo", "ta"), ("tinh", "nang")}
+FRAME_PHRASES = {("dac", "diem"), ("dac", "tinh"), ("thong", "tin"), ("chi", "tiet"), ("mo", "ta"), ("tinh", "nang"),
+                 ("niem", "yet"), ("het", "bao", "nhieu"), ("mat", "bao", "nhieu")}   # "giá niêm yết", "hết bao nhiêu tiền"
 
 # Cues of a "what do you have?" question (used to prefer documents whose TITLE names the thing asked about).
 DISCOVERY_FOLDED = {"nao", "gi", "loai", "nhung"}
@@ -165,6 +166,9 @@ class Lexicon:
                 in_titles[w] = in_titles.get(w, 0) + 1
             for r in set(raw_tokens(title)):
                 raw_in_titles[r] = raw_in_titles.get(r, 0) + 1
+        # Brand / model words: written with a capital letter inside a title ("Motora", "Harbor", "M7"), not common syllables.
+        self.brand_words = {n for title in titles for w in re.findall(r"\w+", title)[1:] if w[:1].isupper()
+                            for n in [normalize(w).strip()] if len(n) >= 4 or any(c.isdigit() for c in n)}   # not 3-letter syllables
         cap = max(2, 0.3 * len(titles))
         self.title_words = {w for w, n in in_titles.items() if n <= cap} - STOP
         self.title_raw_words = {r for r, n in raw_in_titles.items() if n <= cap}
@@ -198,6 +202,12 @@ class Lexicon:
             return None
         limit = 1 if len(token) < 8 else 2
         best, tied = limit + 1, []
+        if len(token) >= 4:
+            # Brand / model words are what people mistype (a dropped syllable: "mota" for "motora"): up to 2 edits towards one
+            # of them, when exactly one is that close.
+            near = [b for b in self.brand_words if abs(len(b) - len(token)) <= 2 and _osa(token, b) <= 2]
+            if len(near) == 1 and near[0] not in STOP:
+                return near[0]
         for cand in list(self.df) + list(STOP):
             if abs(len(cand) - len(token)) > limit:
                 continue
@@ -208,8 +218,11 @@ class Lexicon:
                 tied.append(cand)
         if best > limit or len(tied) != 1:
             return None
-        if len(token) < 6 and sorted(token) != sorted(tied[0]):
-            return None   # a short word is only repaired when it is a transposition of a known word
+        if len(token) < 6 and sorted(token) != sorted(tied[0]) and not (len(token) >= 4 and tied[0] in self.brand_words):
+            # A short word is only repaired when it is a transposition of a known word, or a slip towards a brand / model
+            # word ("mota" -> "motora"): those are what people mistype, and they are rare enough not to be a guess
+            # ("vang" must never become the common syllable "van").
+            return None
         return tied[0]
 
 
@@ -258,6 +271,7 @@ class Analysis:
     asks_stock: bool = False
     asks_offer: bool = False                              # "any discount?": needs a stated offer in the document
     asks_private: bool = False                            # order status, phone numbers, refunds: policy documents only
+    has_entity: bool = False                            # a word that names a thing (a few product titles) is in the question
     needs_referent: bool = False                          # "how much is that one?": the subject is only a pointer
     pointer: tuple | None = None                          # ('pronoun', None) | ('ordinal', n) found in the question
     names: list[str] = field(default_factory=list)       # unknown proper names / model codes in the question
@@ -325,6 +339,7 @@ def analyze(query: str, lexicon: Lexicon) -> Analysis:
     result = Analysis()
     # Comparison phrases ("dưới 2 triệu") are conditions to compute, not words to find: cut them out first.
     result.conditions, query = parse_conditions(query)
+    query = cut_scenario_amounts(query)
     result.quantities = extract(query)
     items = _items(query)
     folded_all = [f for _, f, _ in items]
@@ -337,7 +352,8 @@ def analyze(query: str, lexicon: Lexicon) -> Analysis:
     letters = [c for c in query if c.isalpha()]
     shouting = bool(letters) and all(c.isupper() for c in letters)
     fixes = 0
-    frame = {i + k for i in range(len(folded_all) - 1) if (folded_all[i], folded_all[i + 1]) in FRAME_PAIRS for k in (0, 1)}
+    frame = {i + k for p in FRAME_PHRASES for i in range(len(folded_all) - len(p) + 1)
+             if tuple(folded_all[i:i + len(p)]) == p for k in range(len(p))}
     for position, (raw, folded, written) in enumerate(items):
         if position in frame:
             result.dropped.append((raw, "request frame"))
@@ -369,6 +385,7 @@ def analyze(query: str, lexicon: Lexicon) -> Analysis:
     result.soft = [t for t in dict.fromkeys(result.soft) if t not in result.terms]
     if not result.terms and result.soft:
         result.terms, result.soft, result.promoted = result.soft, [], True
+    result.has_entity = any(lexicon.names_a_thing(t, result.accented.get(t, t)) for t in result.terms)
     pointer = _pointer(items)
     if pointer:
         result.pointer = pointer[:2]

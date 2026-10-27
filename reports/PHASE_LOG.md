@@ -239,3 +239,34 @@ Two general defects found by the fresh data were fixed AFTER the session; fresh 
 describe the frozen code. (1) `ingest`: a bare numeric CSV price is stored as "<n> VND" (documented contract). (2) request frames
 ("đặc điểm", "thông tin", "chi tiết", "mô tả", "tính năng") are not content words. Regression check on dev/near-miss/legacy:
 identical (39/52, 0/10, 0/12, 31/31 32/33 18/18 12/12); new unit tests on invented data. 352 tests pass.
+
+## Independent trial (diagnostic, written outside Claude Code: 28 docs, 124 questions) -> v4.2
+The trial files are `$HOME\Downloads\commerce_blind_trial`; results `reports/blind_trial/` (not committed: external data). The sealed
+holdout was not opened. After using it for fixes the trial is no longer blind.
+**Measurement errors found and fixed (`scripts/blind_eval.py`):**
+1. A returned source was counted as a hallucination even when the answer asserts nothing. Offline the answer is quoted document
+   text. Outcomes are now told apart: `refused` (no source), `sourced_no_assertion` (source returned for a question marked
+   unanswerable, nothing forbidden said), `hallucination` (forbidden text, excluded document, or an answer failing the evidence
+   check). Strict refusal is still reported (`refused_correctly`), next to `no_false_claim`.
+2. "1. [ID] ..." list numbers of multi-source answers were read as unsupported numbers by the evidence check (a false flag).
+3. `quality_eval` (dev sets): a source flagged `premise_mismatch` (it corrects a wrong number) is not a leak. Baseline code never
+   sets the flag, so baseline numbers are unchanged.
+Re-scoring the SAME v4.1 outputs with the fixed measurement: 72/124 -> 76/124 pass; hallucination flags 4 -> 0; no_false_claim 21/21
+(strict refusal 18/21; the 3 others are stock/attribute questions answered with the product's own text).
+**Algorithm defects found (general, none specific to a trial product) and fixed:**
+- A number in the question that the document does not state ("Tủ Harbor H6 có 8 ngăn?") made the product vanish. Now, when the
+  question names a thing (a rare title word) the document is returned flagged `premise_mismatch` (answer note: the real figure
+  is in the document). Still refused: another model code (H7 vs H6), percentages / offers, and a bare number without a named thing.
+  Missing pure numbers no longer lower word coverage; the gate decides. Evidence guard unchanged, no gate weakened.
+- Order sizes ("đơn 2 triệu", "mua 4 triệu") are scenario parameters, not claims to find in a document.
+- Frames and abbreviations: "giá niêm yết", "hết bao nhiêu (tiền)", "ko / hok / dc", "lên".
+- Range quantities in documents ("72–118 cm"), "thấp hơn", "tiếng" = hour.
+- Typos toward brand/model words (capitalised, >= 4 letters or with digits): up to 2 edits when exactly one is that close ("mota" -> "motora"); ordinary syllables still never ("vang" -> "van").
+- Tried and REVERTED: answering private-data questions from policy documents by their cue words alone (U03 regressed: three policies matched).
+**Result on the trial (same files): 55/103 -> 64/103 source found, false abstention 48 -> 39, answers correct 36/54 -> 42/54, all checks 72 -> 85/124 pass, no false claim 21/21.** Dev 40/52 (39), near-miss 0/12, legacy unchanged, 372 tests pass.
+**What is NOT fixable lexically, and what is missing to verify semantic retrieval:** 25/25 `synonym_need` still 0 (plus most remaining policy paraphrases:
+"nộp", "đổi ý", "thanh toán sau lúc giao"): the question shares no words with the document. B1 (dev, 151 texts) showed the right
+document ranks first but absolute similarity cannot separate it from unanswerable questions. Missing: (1) an embedding run on THIS trial
+(28 docs + 124 questions, ~330 texts; needs your permission and key), (2) the data-class gate (stock/offer/private) was added after B1, so the
+safety side must be re-measured with real vectors; (3) a larger set to calibrate a conservative threshold plus a separate sealed
+confirmation set. Until then hybrid stays off and semantic retrieval is NOT VERIFIED.
