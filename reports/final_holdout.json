@@ -1,0 +1,337 @@
+{
+  "schema": 1,
+  "label": "final",
+  "set": "holdout",
+  "date_utc": "2026-10-27T02:48:28Z",
+  "code_root": "D:\\Commerce_AI_Copilot_v2_1",
+  "code_commit": "5a8d841b2a22ed37e94fdfb59372bc4ea7931e06",
+  "code_dirty": false,
+  "harness_commit": "5a8d841b2a22ed37e94fdfb59372bc4ea7931e06",
+  "config": {
+    "llm": "off",
+    "embedding": "off",
+    "k": 3
+  },
+  "extra_docs": [],
+  "dataset_sha256": "35d5d0fd698634c85e80c7fbec5e723e38c3af4d4afb4a23cb892aba0e82145d",
+  "summary": {
+    "cases": 33,
+    "retrieval_hit_at_3": {
+      "passed": 14,
+      "total": 25,
+      "rate": 0.56,
+      "ci95": [
+        0.371,
+        0.733
+      ]
+    },
+    "false_abstention": {
+      "passed": 11,
+      "total": 25,
+      "rate": 0.44,
+      "ci95": [
+        0.267,
+        0.629
+      ]
+    },
+    "wrong_source_only": {
+      "passed": 0,
+      "total": 25,
+      "rate": 0.0,
+      "ci95": [
+        0.0,
+        0.133
+      ]
+    },
+    "answer_correctness_must_contain": {
+      "passed": 2,
+      "total": 4,
+      "rate": 0.5,
+      "ci95": [
+        0.15,
+        0.85
+      ]
+    },
+    "citation_correctness": {
+      "passed": 14,
+      "total": 14,
+      "rate": 1.0,
+      "ci95": [
+        0.785,
+        1.0
+      ]
+    },
+    "unsupported_answer_leaks": {
+      "passed": 0,
+      "total": 8,
+      "rate": 0.0,
+      "ci95": [
+        0.0,
+        0.324
+      ]
+    },
+    "clarify_or_abstain_ok": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "ci95": [
+        null,
+        null
+      ]
+    },
+    "latency_ms": {
+      "p50": 9.71,
+      "p95": 140.22
+    },
+    "by_group": {
+      "discovery": {
+        "passed": 4,
+        "total": 4,
+        "rate": 1.0,
+        "ci95": [
+          0.51,
+          1.0
+        ]
+      },
+      "english": {
+        "passed": 1,
+        "total": 1,
+        "rate": 1.0,
+        "ci95": [
+          0.207,
+          1.0
+        ]
+      },
+      "lookup": {
+        "passed": 2,
+        "total": 4,
+        "rate": 0.5,
+        "ci95": [
+          0.15,
+          0.85
+        ]
+      },
+      "multidoc": {
+        "passed": 1,
+        "total": 1,
+        "rate": 1.0,
+        "ci95": [
+          0.207,
+          1.0
+        ]
+      },
+      "near_miss": {
+        "passed": 8,
+        "total": 8,
+        "rate": 1.0,
+        "ci95": [
+          0.676,
+          1.0
+        ]
+      },
+      "no_diacritics": {
+        "passed": 3,
+        "total": 3,
+        "rate": 1.0,
+        "ci95": [
+          0.438,
+          1.0
+        ]
+      },
+      "numeric_condition": {
+        "passed": 2,
+        "total": 2,
+        "rate": 1.0,
+        "ci95": [
+          0.342,
+          1.0
+        ]
+      },
+      "paraphrase": {
+        "passed": 1,
+        "total": 4,
+        "rate": 0.25,
+        "ci95": [
+          0.046,
+          0.699
+        ]
+      },
+      "synonym_need": {
+        "passed": 0,
+        "total": 4,
+        "rate": 0.0,
+        "ci95": [
+          0.0,
+          0.49
+        ]
+      },
+      "typo": {
+        "passed": 0,
+        "total": 2,
+        "rate": 0.0,
+        "ci95": [
+          0.0,
+          0.658
+        ]
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "H02",
+      "group": "lookup",
+      "question": "Đèn Focus LED có phải dùng điện 220V không?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "answer_ok": false,
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H03",
+      "group": "lookup",
+      "question": "Ghế Flex lưng làm bằng chất liệu gì?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "answer_ok": false,
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H10",
+      "group": "paraphrase",
+      "question": "Hàng bị giao nhầm kiểu thì xử lý ra sao?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H11",
+      "group": "paraphrase",
+      "question": "Chuyển khoản hay trả tiền khi nhận hàng đều được chứ?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H12",
+      "group": "paraphrase",
+      "question": "Bảo hành đèn bàn kéo dài bao lâu?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H16",
+      "group": "typo",
+      "question": "Ghế văn phòng Fexl có tựa tay không?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H17",
+      "group": "typo",
+      "question": "Thanh tóan khi nhận hnagf được không?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H18",
+      "group": "synonym_need",
+      "question": "Cần thứ gì để đọc sách buổi tối?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H19",
+      "group": "synonym_need",
+      "question": "Muốn cái ly có in chữ để tặng sinh nhật",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H20",
+      "group": "synonym_need",
+      "question": "Chỗ để đựng tài liệu nhiều ngăn",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H21",
+      "group": "synonym_need",
+      "question": "Hàng gửi đến bị vỡ thì sao?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    }
+  ]
+}

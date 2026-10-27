@@ -1,0 +1,392 @@
+{
+  "schema": 1,
+  "label": "baseline",
+  "set": "holdout",
+  "date_utc": "2026-10-27T02:48:28Z",
+  "code_root": "C:\\Users\\ASUS\\AppData\\Local\\Temp\\base_07a626f",
+  "code_commit": "07a626f9987c1cb0d8b30e60faf90dee0d3c23c1",
+  "code_dirty": false,
+  "harness_commit": "5a8d841b2a22ed37e94fdfb59372bc4ea7931e06",
+  "config": {
+    "llm": "off",
+    "embedding": "off",
+    "k": 3
+  },
+  "extra_docs": [],
+  "dataset_sha256": "35d5d0fd698634c85e80c7fbec5e723e38c3af4d4afb4a23cb892aba0e82145d",
+  "summary": {
+    "cases": 33,
+    "retrieval_hit_at_3": {
+      "passed": 12,
+      "total": 25,
+      "rate": 0.48,
+      "ci95": [
+        0.3,
+        0.665
+      ]
+    },
+    "false_abstention": {
+      "passed": 13,
+      "total": 25,
+      "rate": 0.52,
+      "ci95": [
+        0.335,
+        0.7
+      ]
+    },
+    "wrong_source_only": {
+      "passed": 0,
+      "total": 25,
+      "rate": 0.0,
+      "ci95": [
+        0.0,
+        0.133
+      ]
+    },
+    "answer_correctness_must_contain": {
+      "passed": 3,
+      "total": 4,
+      "rate": 0.75,
+      "ci95": [
+        0.301,
+        0.954
+      ]
+    },
+    "citation_correctness": {
+      "passed": 12,
+      "total": 12,
+      "rate": 1.0,
+      "ci95": [
+        0.757,
+        1.0
+      ]
+    },
+    "unsupported_answer_leaks": {
+      "passed": 2,
+      "total": 8,
+      "rate": 0.25,
+      "ci95": [
+        0.071,
+        0.591
+      ]
+    },
+    "clarify_or_abstain_ok": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "ci95": [
+        null,
+        null
+      ]
+    },
+    "latency_ms": {
+      "p50": 8.02,
+      "p95": 12.21
+    },
+    "by_group": {
+      "discovery": {
+        "passed": 2,
+        "total": 4,
+        "rate": 0.5,
+        "ci95": [
+          0.15,
+          0.85
+        ]
+      },
+      "english": {
+        "passed": 1,
+        "total": 1,
+        "rate": 1.0,
+        "ci95": [
+          0.207,
+          1.0
+        ]
+      },
+      "lookup": {
+        "passed": 3,
+        "total": 4,
+        "rate": 0.75,
+        "ci95": [
+          0.301,
+          0.954
+        ]
+      },
+      "multidoc": {
+        "passed": 1,
+        "total": 1,
+        "rate": 1.0,
+        "ci95": [
+          0.207,
+          1.0
+        ]
+      },
+      "near_miss": {
+        "passed": 6,
+        "total": 8,
+        "rate": 0.75,
+        "ci95": [
+          0.409,
+          0.929
+        ]
+      },
+      "no_diacritics": {
+        "passed": 3,
+        "total": 3,
+        "rate": 1.0,
+        "ci95": [
+          0.438,
+          1.0
+        ]
+      },
+      "numeric_condition": {
+        "passed": 0,
+        "total": 2,
+        "rate": 0.0,
+        "ci95": [
+          0.0,
+          0.658
+        ]
+      },
+      "paraphrase": {
+        "passed": 1,
+        "total": 4,
+        "rate": 0.25,
+        "ci95": [
+          0.046,
+          0.699
+        ]
+      },
+      "synonym_need": {
+        "passed": 0,
+        "total": 4,
+        "rate": 0.0,
+        "ci95": [
+          0.0,
+          0.49
+        ]
+      },
+      "typo": {
+        "passed": 1,
+        "total": 2,
+        "rate": 0.5,
+        "ci95": [
+          0.095,
+          0.905
+        ]
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "H03",
+      "group": "lookup",
+      "question": "Ghế Flex lưng làm bằng chất liệu gì?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "answer_ok": false,
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H05",
+      "group": "discovery",
+      "question": "Shop mình có những loại bàn nào?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H06",
+      "group": "discovery",
+      "question": "Bên này có bán ghế không ạ?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H10",
+      "group": "paraphrase",
+      "question": "Hàng bị giao nhầm kiểu thì xử lý ra sao?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H11",
+      "group": "paraphrase",
+      "question": "Chuyển khoản hay trả tiền khi nhận hàng đều được chứ?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H12",
+      "group": "paraphrase",
+      "question": "Bảo hành đèn bàn kéo dài bao lâu?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H17",
+      "group": "typo",
+      "question": "Thanh tóan khi nhận hnagf được không?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H18",
+      "group": "synonym_need",
+      "question": "Cần thứ gì để đọc sách buổi tối?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H19",
+      "group": "synonym_need",
+      "question": "Muốn cái ly có in chữ để tặng sinh nhật",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H20",
+      "group": "synonym_need",
+      "question": "Chỗ để đựng tài liệu nhiều ngăn",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H21",
+      "group": "synonym_need",
+      "question": "Hàng gửi đến bị vỡ thì sao?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H22",
+      "group": "numeric_condition",
+      "question": "Có sản phẩm nào giá dưới 1 triệu?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "H23",
+      "group": "numeric_condition",
+      "question": "Bàn nào cao hơn 70 cm?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "HN01",
+      "group": "near_miss",
+      "question": "Ghế Flex còn hàng màu đen không?",
+      "type": "none",
+      "found": [
+        "PRD-102"
+      ],
+      "mode": "extractive_demo",
+      "leaked": [
+        "PRD-102"
+      ],
+      "pass": false
+    },
+    {
+      "id": "HN08",
+      "group": "near_miss",
+      "question": "Đèn bàn Focus Max có mấy mức sáng?",
+      "type": "none",
+      "found": [
+        "PRD-103"
+      ],
+      "mode": "extractive_demo",
+      "leaked": [
+        "PRD-103"
+      ],
+      "pass": false
+    }
+  ]
+}

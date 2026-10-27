@@ -1,0 +1,705 @@
+{
+  "schema": 1,
+  "label": "final",
+  "set": "fresh",
+  "date_utc": "2026-10-27T02:48:47Z",
+  "code_root": "D:\\Commerce_AI_Copilot_v2_1",
+  "code_commit": "5a8d841b2a22ed37e94fdfb59372bc4ea7931e06",
+  "code_dirty": true,
+  "harness_commit": "5a8d841b2a22ed37e94fdfb59372bc4ea7931e06",
+  "config": {
+    "llm": "off",
+    "embedding": "off",
+    "k": 3
+  },
+  "extra_docs": [],
+  "dataset_sha256": "4bea76b5e1411f657715439dd5e71836647f7a74bebb289f599ae09ee3b3def9",
+  "fresh_documents_ingested": 7,
+  "lifecycle": {
+    "supported": true,
+    "checks": {
+      "update: the new price is served": true,
+      "update: the old price is not served": true,
+      "update: the old price matches nothing": true,
+      "removed product: not returned": false,
+      "removed product: not in documents": false,
+      "deleted policy: not returned": false,
+      "indexes are consistent after update and delete": true
+    },
+    "all_passed": false
+  },
+  "summary": {
+    "cases": 27,
+    "retrieval_hit_at_3": {
+      "passed": 12,
+      "total": 19,
+      "rate": 0.632,
+      "ci95": [
+        0.41,
+        0.809
+      ]
+    },
+    "false_abstention": {
+      "passed": 5,
+      "total": 19,
+      "rate": 0.263,
+      "ci95": [
+        0.118,
+        0.488
+      ]
+    },
+    "wrong_source_only": {
+      "passed": 1,
+      "total": 19,
+      "rate": 0.053,
+      "ci95": [
+        0.009,
+        0.246
+      ]
+    },
+    "answer_correctness_must_contain": {
+      "passed": 3,
+      "total": 3,
+      "rate": 1.0,
+      "ci95": [
+        0.438,
+        1.0
+      ]
+    },
+    "citation_correctness": {
+      "passed": 12,
+      "total": 12,
+      "rate": 1.0,
+      "ci95": [
+        0.757,
+        1.0
+      ]
+    },
+    "unsupported_answer_leaks": {
+      "passed": 1,
+      "total": 8,
+      "rate": 0.125,
+      "ci95": [
+        0.022,
+        0.471
+      ]
+    },
+    "clarify_or_abstain_ok": {
+      "passed": 0,
+      "total": 0,
+      "rate": null,
+      "ci95": [
+        null,
+        null
+      ]
+    },
+    "latency_ms": {
+      "p50": 9.9,
+      "p95": 25.18
+    },
+    "by_group": {
+      "lookup": {
+        "passed": 0,
+        "total": 1,
+        "rate": 0.0,
+        "ci95": [
+          0.0,
+          0.793
+        ]
+      },
+      "near_miss": {
+        "passed": 6,
+        "total": 7,
+        "rate": 0.857,
+        "ci95": [
+          0.487,
+          0.974
+        ]
+      },
+      "no_diacritics": {
+        "passed": 3,
+        "total": 3,
+        "rate": 1.0,
+        "ci95": [
+          0.438,
+          1.0
+        ]
+      },
+      "numeric_condition": {
+        "passed": 2,
+        "total": 4,
+        "rate": 0.5,
+        "ci95": [
+          0.15,
+          0.85
+        ]
+      },
+      "paraphrase": {
+        "passed": 3,
+        "total": 3,
+        "rate": 1.0,
+        "ci95": [
+          0.438,
+          1.0
+        ]
+      },
+      "policy": {
+        "passed": 2,
+        "total": 3,
+        "rate": 0.667,
+        "ci95": [
+          0.208,
+          0.939
+        ]
+      },
+      "synonym_need": {
+        "passed": 0,
+        "total": 2,
+        "rate": 0.0,
+        "ci95": [
+          0.0,
+          0.658
+        ]
+      },
+      "typo": {
+        "passed": 2,
+        "total": 2,
+        "rate": 1.0,
+        "ci95": [
+          0.342,
+          1.0
+        ]
+      },
+      "unknown_attribute": {
+        "passed": 0,
+        "total": 1,
+        "rate": 0.0,
+        "ci95": [
+          0.0,
+          0.793
+        ]
+      },
+      "unsupported": {
+        "passed": 1,
+        "total": 1,
+        "rate": 1.0,
+        "ci95": [
+          0.207,
+          1.0
+        ]
+      }
+    }
+  },
+  "failures": [
+    {
+      "id": "F02",
+      "group": "lookup",
+      "question": "Ghế Aero X7 có đặc điểm gì?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "F10",
+      "group": "synonym_need",
+      "question": "Muốn một thứ để đọc sách buổi tối",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "F11",
+      "group": "synonym_need",
+      "question": "Cần thiết bị để nghe nhạc mà không bị ồn trên xe buýt",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "F12",
+      "group": "numeric_condition",
+      "question": "Có sản phẩm nào giá dưới 1 triệu?",
+      "type": "hit",
+      "found": [
+        "PRD-103",
+        "POD-201",
+        "POD-202"
+      ],
+      "mode": "extractive_demo",
+      "retrieval_hit": false,
+      "abstained": false,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "F14",
+      "group": "numeric_condition",
+      "question": "Có sofa nào dưới 4 triệu không?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "F17",
+      "group": "policy",
+      "question": "Muốn đổi màu sau khi mua thì làm thế nào?",
+      "type": "hit",
+      "found": [
+        "POL-001"
+      ],
+      "mode": "extractive_demo",
+      "retrieval_hit": false,
+      "abstained": false,
+      "wrong_source_only": true,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "F19",
+      "group": "unknown_attribute",
+      "question": "Ghế Aero X7 có tải trọng bao nhiêu kg?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "F23",
+      "group": "near_miss",
+      "question": "Sofa Terra S1 có màu hồng không?",
+      "type": "none",
+      "found": [
+        "CSV-54CDAF589281"
+      ],
+      "mode": "extractive_demo",
+      "leaked": [
+        "CSV-54CDAF589281"
+      ],
+      "pass": false
+    }
+  ],
+  "cases": [
+    {
+      "id": "F01",
+      "group": "paraphrase",
+      "question": "Shop bán ghế công thái học không?",
+      "type": "hit",
+      "found": [
+        "CSV-BCAC2F5ED292",
+        "PRD-102"
+      ],
+      "mode": "extractive_demo",
+      "retrieval_hit": true,
+      "abstained": false,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": true,
+      "pass": true
+    },
+    {
+      "id": "F02",
+      "group": "lookup",
+      "question": "Ghế Aero X7 có đặc điểm gì?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "F03",
+      "group": "paraphrase",
+      "question": "Ghế nào hỗ trợ lưng vậy?",
+      "type": "hit",
+      "found": [
+        "CSV-BCAC2F5ED292",
+        "POL-003"
+      ],
+      "mode": "extractive_demo",
+      "retrieval_hit": true,
+      "abstained": false,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": true,
+      "pass": true
+    },
+    {
+      "id": "F04",
+      "group": "paraphrase",
+      "question": "Có loại nào ngồi làm việc lâu không?",
+      "type": "hit",
+      "found": [
+        "CSV-BCAC2F5ED292"
+      ],
+      "mode": "extractive_demo",
+      "retrieval_hit": true,
+      "abstained": false,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": true,
+      "pass": true
+    },
+    {
+      "id": "F05",
+      "group": "no_diacritics",
+      "question": "ghe nao ho tro lung vay",
+      "type": "hit",
+      "found": [
+        "CSV-BCAC2F5ED292",
+        "POL-003"
+      ],
+      "mode": "extractive_demo",
+      "retrieval_hit": true,
+      "abstained": false,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": true,
+      "pass": true
+    },
+    {
+      "id": "F06",
+      "group": "no_diacritics",
+      "question": "ban dung nang ha dien gia bao nhieu",
+      "type": "hit",
+      "found": [
+        "CSV-88A7A0DD2AF3",
+        "PRD-102"
+      ],
+      "mode": "extractive_demo",
+      "retrieval_hit": true,
+      "abstained": false,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "answer_ok": true,
+      "citation_ok": true,
+      "pass": true
+    },
+    {
+      "id": "F07",
+      "group": "no_diacritics",
+      "question": "co den san nao khong",
+      "type": "hit",
+      "found": [
+        "CSV-0637F1CC455A",
+        "PRD-103",
+        "CSV-88A7A0DD2AF3"
+      ],
+      "mode": "extractive_demo",
+      "retrieval_hit": true,
+      "abstained": false,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": true,
+      "pass": true
+    },
+    {
+      "id": "F08",
+      "group": "typo",
+      "question": "Sofa đơn Terra S1 kích thướcc bao nhiêu?",
+      "type": "hit",
+      "found": [
+        "CSV-54CDAF589281"
+      ],
+      "mode": "extractive_demo",
+      "retrieval_hit": true,
+      "abstained": false,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": true,
+      "pass": true
+    },
+    {
+      "id": "F09",
+      "group": "typo",
+      "question": "Tai nghe chống ồn Wave H6 pni dùng bao lâu?",
+      "type": "hit",
+      "found": [
+        "CSV-E9585C90756B"
+      ],
+      "mode": "extractive_demo",
+      "retrieval_hit": true,
+      "abstained": false,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "answer_ok": true,
+      "citation_ok": true,
+      "pass": true
+    },
+    {
+      "id": "F10",
+      "group": "synonym_need",
+      "question": "Muốn một thứ để đọc sách buổi tối",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "F11",
+      "group": "synonym_need",
+      "question": "Cần thiết bị để nghe nhạc mà không bị ồn trên xe buýt",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "F12",
+      "group": "numeric_condition",
+      "question": "Có sản phẩm nào giá dưới 1 triệu?",
+      "type": "hit",
+      "found": [
+        "PRD-103",
+        "POD-201",
+        "POD-202"
+      ],
+      "mode": "extractive_demo",
+      "retrieval_hit": false,
+      "abstained": false,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "F13",
+      "group": "numeric_condition",
+      "question": "Bàn nào có chiều cao điều chỉnh trên 100 cm?",
+      "type": "hit",
+      "found": [
+        "CSV-88A7A0DD2AF3"
+      ],
+      "mode": "extractive_demo",
+      "retrieval_hit": true,
+      "abstained": false,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": true,
+      "pass": true
+    },
+    {
+      "id": "F14",
+      "group": "numeric_condition",
+      "question": "Có sofa nào dưới 4 triệu không?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "F15",
+      "group": "numeric_condition",
+      "question": "Giá sách nào cao hơn 150 cm?",
+      "type": "hit",
+      "found": [
+        "CSV-BBC0A2F066B6"
+      ],
+      "mode": "extractive_demo",
+      "retrieval_hit": true,
+      "abstained": false,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": true,
+      "pass": true
+    },
+    {
+      "id": "F16",
+      "group": "policy",
+      "question": "Lắp ráp tại nhà có miễn phí không?",
+      "type": "hit",
+      "found": [
+        "DOC-24464755FE84-001"
+      ],
+      "mode": "extractive_demo",
+      "retrieval_hit": true,
+      "abstained": false,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": true,
+      "pass": true
+    },
+    {
+      "id": "F17",
+      "group": "policy",
+      "question": "Muốn đổi màu sau khi mua thì làm thế nào?",
+      "type": "hit",
+      "found": [
+        "POL-001"
+      ],
+      "mode": "extractive_demo",
+      "retrieval_hit": false,
+      "abstained": false,
+      "wrong_source_only": true,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "F18",
+      "group": "policy",
+      "question": "Đơn bao nhiêu thì được miễn phí lắp ráp?",
+      "type": "hit",
+      "found": [
+        "DOC-24464755FE84-001",
+        "POL-002"
+      ],
+      "mode": "extractive_demo",
+      "retrieval_hit": true,
+      "abstained": false,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "answer_ok": true,
+      "citation_ok": true,
+      "pass": true
+    },
+    {
+      "id": "F19",
+      "group": "unknown_attribute",
+      "question": "Ghế Aero X7 có tải trọng bao nhiêu kg?",
+      "type": "hit",
+      "found": [],
+      "mode": "no_evidence",
+      "retrieval_hit": false,
+      "abstained": true,
+      "wrong_source_only": false,
+      "excluded_returned": [],
+      "citation_ok": false,
+      "pass": false
+    },
+    {
+      "id": "F20",
+      "group": "near_miss",
+      "question": "Ghế Aero X9 có hỗ trợ thắt lưng không?",
+      "type": "none",
+      "found": [],
+      "mode": "no_evidence",
+      "leaked": [],
+      "pass": true
+    },
+    {
+      "id": "F21",
+      "group": "near_miss",
+      "question": "Bàn đứng Zen M2 còn hàng không?",
+      "type": "none",
+      "found": [],
+      "mode": "no_evidence",
+      "leaked": [],
+      "pass": true
+    },
+    {
+      "id": "F22",
+      "group": "near_miss",
+      "question": "Tai nghe Wave H6 có khuyến mãi không?",
+      "type": "none",
+      "found": [],
+      "mode": "no_evidence",
+      "leaked": [],
+      "pass": true
+    },
+    {
+      "id": "F23",
+      "group": "near_miss",
+      "question": "Sofa Terra S1 có màu hồng không?",
+      "type": "none",
+      "found": [
+        "CSV-54CDAF589281"
+      ],
+      "mode": "extractive_demo",
+      "leaked": [
+        "CSV-54CDAF589281"
+      ],
+      "pass": false
+    },
+    {
+      "id": "F24",
+      "group": "near_miss",
+      "question": "Có tủ lạnh không?",
+      "type": "none",
+      "found": [],
+      "mode": "no_evidence",
+      "leaked": [],
+      "pass": true
+    },
+    {
+      "id": "F25",
+      "group": "near_miss",
+      "question": "Ghế công thái học Aero X7 giảm 30% đúng không?",
+      "type": "none",
+      "found": [],
+      "mode": "no_evidence",
+      "leaked": [],
+      "pass": true
+    },
+    {
+      "id": "F26",
+      "group": "near_miss",
+      "question": "Đèn sàn Nova L3 cao 200 cm đúng không?",
+      "type": "none",
+      "found": [],
+      "mode": "no_evidence",
+      "leaked": [],
+      "pass": true
+    },
+    {
+      "id": "F27",
+      "group": "unsupported",
+      "question": "Cho tôi số điện thoại khách đã mua Aero X7",
+      "type": "none",
+      "found": [],
+      "mode": "no_evidence",
+      "leaked": [],
+      "pass": true
+    }
+  ]
+}

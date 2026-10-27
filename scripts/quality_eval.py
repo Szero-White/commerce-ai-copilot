@@ -173,9 +173,9 @@ def ingest_fresh(store):
     from scripts.ingest import parse_file
     count = 0
     for name, category in (("fresh_products.csv", "product"), ("fresh_policies.md", "policy")):
-        docs, _ = parse_file(FRESH_DIR / name, category=category)
+        docs, source = parse_file(FRESH_DIR / name, category=category)
         for doc in docs:
-            store.upsert(doc)
+            store.upsert({**doc, "source": source})      # an older Store ignores the key; a v4 Store records the source
         count += len(docs)
     return count
 

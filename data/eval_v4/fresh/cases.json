@@ -17,7 +17,7 @@
     {"id": "F14", "group": "numeric_condition", "question": "Có sofa nào dưới 4 triệu không?", "type": "hit", "ids": ["@TERRA-S1"]},
     {"id": "F15", "group": "numeric_condition", "question": "Giá sách nào cao hơn 150 cm?", "type": "hit", "ids": ["@LUNA-B4"]},
     {"id": "F16", "group": "policy", "question": "Lắp ráp tại nhà có miễn phí không?", "type": "hit", "ids": ["@policy:fresh_policies:1"]},
-    {"id": "F17", "group": "policy", "question": "Muốn đổi màu sau khi mua thì làm thế nào?", "type": "hit", "ids": ["@policy:fresh_policies:1", "@policy:fresh_policies:2"]},
+    {"id": "F17", "group": "policy", "question": "Muốn đổi màu sau khi mua thì làm thế nào?", "type": "hit", "ids": ["@policy:fresh_policies:1"]},
     {"id": "F18", "group": "policy", "question": "Đơn bao nhiêu thì được miễn phí lắp ráp?", "type": "hit", "ids": ["@policy:fresh_policies:1"], "must_contain": ["3.000.000"]},
     {"id": "F19", "group": "unknown_attribute", "question": "Ghế Aero X7 có tải trọng bao nhiêu kg?", "type": "hit", "ids": ["@AERO-X7"], "tag": "llm_rubric"},
     {"id": "F20", "group": "near_miss", "question": "Ghế Aero X9 có hỗ trợ thắt lưng không?", "type": "none"},
