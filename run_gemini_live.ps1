@@ -37,6 +37,16 @@ $names = @('GEMINI_API_KEY', 'LLM_PROVIDER', 'EMBEDDING_PROVIDER', 'GEMINI_MODEL
            'PYTHONIOENCODING', 'PYTHONWARNINGS', 'PYTHONDONTWRITEBYTECODE')
 $module = if ($Task -eq 'embedding-dev') { 'scripts.embedding_experiment' } else { 'scripts.live_eval' }
 $moduleFile = ($module -replace '^scripts\.', 'scripts\') + '.py'
+
+# Arguments that follow the python executable for a task. An explicit string[] (never a value that PowerShell can unroll
+# into a scalar) so that --run is always passed for the embedding experiment, which refuses to run without it.
+function Get-TaskArguments([string]$TaskName) {
+    $list = New-Object System.Collections.Generic.List[string]
+    $list.Add('-m')
+    if ($TaskName -eq 'embedding-dev') { $list.Add('scripts.embedding_experiment'); $list.Add('--run') }
+    else { $list.Add('scripts.live_eval') }
+    return , $list.ToArray()
+}
 $previous = @{}
 foreach ($n in $names) { $previous[$n] = [Environment]::GetEnvironmentVariable($n, 'Process') }
 $plain = $null
@@ -90,9 +100,17 @@ try {
         if ($SelfTest) {
             & $python -c "import os; print('child sees key:', os.environ['GEMINI_API_KEY'])" 2>&1 |
                 ForEach-Object { "$_".Replace($plain, '***') }
+            # The command line of each task, as a child process receives it. No module is started, so no network is used.
+            foreach ($case in @(@('smoke', 'scripts.live_eval', ''), @('embedding-dev', 'scripts.embedding_experiment', '--run'))) {
+                [string[]]$taskArgs = Get-TaskArguments $case[0]
+                $seen = (& $python -c "import sys; print(' '.join(sys.argv[1:]))" @taskArgs 2>&1 | Out-String).Trim()
+                $expected = ("-m $($case[1]) $($case[2])").Trim()
+                if ($seen -eq $expected) { Write-Host "[self-test] task $($case[0]): arguments '$seen': OK" }
+                else { Write-Host "[self-test] task $($case[0]): got '$seen', expected '$expected': FAIL" -ForegroundColor Red }
+            }
         } else {
-            $moduleArgs = if ($Task -eq 'embedding-dev') { @('--run') } else { @() }
-            & $python -m $module @moduleArgs 2>&1 | ForEach-Object { "$_".Replace($plain, '***') }
+            [string[]]$taskArgs = Get-TaskArguments $Task
+            & $python @taskArgs 2>&1 | ForEach-Object { "$_".Replace($plain, '***') }
         }
         $exitCode = $LASTEXITCODE
     } finally {
