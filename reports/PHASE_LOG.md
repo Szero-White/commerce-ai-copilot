@@ -180,3 +180,48 @@ Status: **hybrid NOT enabled (pre-registered rule not met). Semantic retrieval: 
   is re-ranking already admitted documents, which `retrieval.search` already does when embeddings are enabled. Hybrid stays OFF
   by default; no B2 is needed. Phase 8-11 continue with the lexical system.
 - Full suite: 350 passed.
+
+## Phase 8 — freeze: PASS
+- Tag `freeze-v4` at ec4febe: lexical retrieval + evidence gate (names, codes, quantities, stock, offers, private data,
+  comparisons) + analyzer + dynamic ingestion + multi-turn; hybrid OFF; no semantic admission. Fresh data was written AFTER it
+  (commit 5a8d841). No algorithm change between the tag and the evaluation session (`git diff freeze-v4 a91ed72 -- app/` is empty).
+
+## Phase 9 — final session (baseline 07a626f vs final), run once on the locked holdout and on the fresh data: RESULTS BELOW
+Same script, same data, same config (LLM off, embeddings off, k=3); baseline code = a worktree of 07a626f. Wilson 95% CI in the JSON.
+| Set | Metric | Baseline | Final |
+|---|---|---|---|
+| dev (52 pos / 10 neg) | Hit@3 | 26/52 | 39/52 |
+|  | false abstention | 25/52 | 13/52 |
+|  | unsupported leaks | 0/10 | 0/10 |
+| near-miss (12) | leaks | 1/12 | 0/12 |
+| legacy (tuned-on, contaminated) | dev pos / dev neg / old held-out pos / neg | 31/31, 32/33, 18/18, 12/12 | 31/31, 32/33, 18/18, 12/12 |
+| **HOLDOUT (25 pos / 8 neg, locked, run once)** | Hit@3 | 12/25 (48%, CI 0.30-0.67) | **14/25 (56%, CI 0.37-0.73)** |
+|  | false abstention | 13/25 | **11/25 (44%)** |
+|  | leaks on near-miss/unsupported | 2/8 | **0/8** |
+|  | groups (final) | discovery 2/4, no_diacritics 3/3, typo 1/2, paraphrase 1/4 ... | discovery 4/4, no_diacritics 3/3, typo 0/2, paraphrase 1/4, lookup 2/4, numeric 2/2, synonym_need 0/4, near-miss 8/8 |
+| **FRESH (19 pos / 8 neg, new products + policies imported by ingest only)** | Hit@3 | 10/19 (CI 0.32-0.73) | **12/19 (63%, CI 0.41-0.81)** |
+|  | false abstention | 7/19 | 5/19 |
+|  | leaks | 3/8 | 1/8 (F23: "Sofa Terra S1 có màu hồng không?" returns the sofa document) |
+|  | lifecycle (update price, replace-source removal, delete policy, index consistency) | not supported | **7/7 checks pass** |
+Acceptance verdicts (PLAN V3 section 10): holdout criterion 4 (no-diacritics/typo/discovery group Hit@3 >= 80% AND false abstention
+<= 20%): group 7/9 = 78% and false abstention 44% -> **FAIL**. Negatives: no more leaks than baseline (0 vs 2) and 0 unsupported at
+near-miss -> PASS. Fresh criterion 7 (Hit@3 >= 80%): 63% -> **FAIL**; update/delete/consistency -> PASS. These FAILs are reported as measured;
+nothing was tuned on the holdout or on the fresh data. Holdout was opened only for this session. Real failures to read:
+- both sets: need-based / synonym questions (0/4 holdout, 0/2 fresh): they need meaning, not words (B1: semantic ranking is not an admission rule).
+- holdout typo 0/2: accent-level typos ("Fexl" repaired, but "hnagf" + other changes in one sentence; one is an accent slip such as
+  "Thanh tóan") are outside the repair rules (swaps / key slips on UNKNOWN words only).
+- fresh F02 "Ghế Aero X7 có đặc điểm gì?": "đặc điểm" is a request frame, not content (a real general gap).
+- fresh F12/F14 "giá dưới 1 triệu", "sofa dưới 4 triệu": the CSV price column was a bare number ("Giá: 780000", no currency), so the
+  comparison had nothing to compare (an ingest contract gap, not retrieval).
+- fresh F17: asks about a policy ("đổi màu sau khi mua") and gets POL-001 (shares filler words "sau", "làm"): a false positive of the
+  coverage gate on short generic words.
+- fresh F19: asks an attribute the document does not have (tải trọng) -> abstains (fine for retrieval; LLM rubric case).
+- fresh F23 / holdout-like attribute near-misses: a relevant document is returned although the specific attribute is missing: relevance != support.
+- Why the holdout held more failures than dev: the dev set had been used to tune, and dev and holdout are written by one person; the
+  gap (dev 75% vs holdout 56%) is the honest generalisation estimate, with a wide interval on 25 cases.
+
+## Post-evaluation fixes (v4.1; NOT measured on clean data)
+Two general defects found by the fresh data were fixed AFTER the session; fresh and holdout were NOT re-run, so their numbers above
+describe the frozen code. (1) `ingest`: a bare numeric CSV price is stored as "<n> VND" (documented contract). (2) request frames
+("đặc điểm", "thông tin", "chi tiết", "mô tả", "tính năng") are not content words. Regression check on dev/near-miss/legacy:
+identical (39/52, 0/10, 0/12, 31/31 32/33 18/18 12/12); new unit tests on invented data. 352 tests pass.

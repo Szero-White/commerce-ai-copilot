@@ -90,6 +90,24 @@ def test_stock_question_is_refused_when_no_document_states_a_figure(tmp_path):
     assert ids(store, "Kệ sách Oslo có mấy tầng?")[:1] == ["K-2"]
 
 
+def test_request_frames_are_not_content_words(shop):
+    # Post-evaluation fix (found by the fresh data, see reports/PHASE_LOG.md): "what are its features?" names no feature.
+    assert ids(shop, "Kệ sách Linen K5 có đặc điểm gì?")[:1] == ["K-1"]
+    assert ids(shop, "cho tôi thông tin chi tiết về kệ sách Linen K5")[:1] == ["K-1"]
+    assert terms("đặc điểm gì?", "Kệ sách")[0] == []
+
+
+def test_a_bare_csv_price_is_read_as_vnd_so_price_comparisons_work(tmp_path):
+    from scripts.ingest import ingest_file
+    store = Store(tmp_path / "p.db")
+    store.delete_source("seed")
+    path = tmp_path / "shop.csv"
+    path.write_text("sku,name,price,description\nA-1,Đèn cây Alto,780000,Đèn cây ánh sáng ấm\nB-2,Ghế Brio,2.500.000 VND,Ghế gỗ\n", encoding="utf-8")
+    ingest_file(store, path)
+    assert "780000 VND" in store.documents()[0]["content"] + store.documents()[1]["content"]
+    assert [d["id"] for d in store.fts_search("Có món nào giá dưới 1 triệu không?")] == [d["id"] for d in store.documents() if "Alto" in d["title"]]
+
+
 def test_catalogue_question_lists_products_only_when_no_content_word_remains(shop):
     listed = ids(shop, "Cho mình xem các sản phẩm đang bán")
     assert "K-1" in listed and all(shop.document(i)["category"] == "product" for i in listed)

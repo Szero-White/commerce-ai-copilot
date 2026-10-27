@@ -141,6 +141,9 @@ def _pointer(items):
     return None
 
 
+# "What are its features / details / description?": the frame of a request for information, not words to find in a document.
+FRAME_PAIRS = {("dac", "diem"), ("dac", "tinh"), ("thong", "tin"), ("chi", "tiet"), ("mo", "ta"), ("tinh", "nang")}
+
 # Cues of a "what do you have?" question (used to prefer documents whose TITLE names the thing asked about).
 DISCOVERY_FOLDED = {"nao", "gi", "loai", "nhung"}
 DISCOVERY_RAW = {"bán"}
@@ -334,7 +337,11 @@ def analyze(query: str, lexicon: Lexicon) -> Analysis:
     letters = [c for c in query if c.isalpha()]
     shouting = bool(letters) and all(c.isupper() for c in letters)
     fixes = 0
+    frame = {i + k for i in range(len(folded_all) - 1) if (folded_all[i], folded_all[i + 1]) in FRAME_PAIRS for k in (0, 1)}
     for position, (raw, folded, written) in enumerate(items):
+        if position in frame:
+            result.dropped.append((raw, "request frame"))
+            continue
         corrected = False
         if folded not in lexicon.df and folded not in STOP and fixes < MAX_CORRECTIONS:   # correct() skips known words
             fixed = lexicon.correct(folded)

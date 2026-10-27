@@ -2,11 +2,11 @@
   "schema": 1,
   "label": "final",
   "set": "fresh",
-  "date_utc": "2026-10-27T02:49:02Z",
+  "date_utc": "2026-10-27T02:49:44Z",
   "code_root": "D:\\Commerce_AI_Copilot_v2_1",
-  "code_commit": "69386c55379fbaa00c16ad034c63f5020caa82f1",
-  "code_dirty": true,
-  "harness_commit": "69386c55379fbaa00c16ad034c63f5020caa82f1",
+  "code_commit": "a91ed722a37c733722b79523bf23f3d37e4bf169",
+  "code_dirty": false,
+  "harness_commit": "a91ed722a37c733722b79523bf23f3d37e4bf169",
   "config": {
     "llm": "off",
     "embedding": "off",
@@ -94,8 +94,8 @@
       ]
     },
     "latency_ms": {
-      "p50": 11.39,
-      "p95": 24.79
+      "p50": 10.04,
+      "p95": 24.58
     },
     "by_group": {
       "lookup": {

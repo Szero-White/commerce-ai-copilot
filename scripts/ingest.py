@@ -15,6 +15,7 @@ import argparse
 import csv
 import hashlib
 import json
+import re
 from pathlib import Path
 from app.config import Settings
 from app.storage import Store
@@ -65,6 +66,8 @@ def _parse_csv(path, source):
                 raise ValueError(f"Row {index}: duplicate sku {sku!r}")
             seen.add(sku.lower())
             price = row.get("price") or "chưa có dữ liệu"
+            if re.fullmatch(r"\d+(?:[.,]\d+)*", price):
+                price += " VND"     # a bare number is read as VND, so that "giá dưới 1 triệu" can compare it (see README)
             docs.append({"id": _ident("CSV", source, sku.lower()), "title": f"{name} - {sku}",
                          "category": row.get("category") or "product",
                          "content": f"Tên: {name}. Mã: {sku}. Giá: {price}. Mô tả: {description}"})
