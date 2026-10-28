@@ -62,12 +62,22 @@ def evidence_text(items: list[dict]) -> str:
 
 
 def _sentences(text: str) -> list[str]:
-    return [s for s in re.split(r"(?:[.!?;:]+(?:\s+|$))|\n+", text) if s.strip()]
+    # "•" separates bullet items and page headers that PDF extraction runs together without punctuation.
+    return [s for s in re.split(r"(?:[.!?;:]+(?:\s+|$))|\n+|\s•\s", text) if s.strip()]
 
 
-def _negated(sentence: str) -> bool:
-    """Accent-aware: "chưa" (not yet) is a negation, "chữa" (cure) is not; "không gian" is space."""
-    padded = " " + " ".join(re.findall(r"\w+", unicodedata.normalize("NFC", sentence).lower())) + " "
+# A negation INSIDE a condition ("được đổi trả nếu sản phẩm chưa sử dụng") negates the condition, not the policy.
+_CONDITION = re.compile(r"\b(?:nếu|khi|trong trường hợp|với điều kiện|miễn là|if|unless|provided that|when)\b", re.I)
+
+
+def _negated(sentence: str, ignore_conditions: bool = False) -> bool:
+    """Accent-aware: "chưa" (not yet) is a negation, "chữa" (cure) is not; "không gian" is space.
+
+    `ignore_conditions`: only the part before a conditional clause counts. Used for SOURCE sentences, whose negation decides
+    whether a policy "does not exist"; answers keep the stricter reading."""
+    if ignore_conditions:
+        sentence = _CONDITION.split(sentence, maxsplit=1)[0]
+    padded =" " + " ".join(re.findall(r"\w+", unicodedata.normalize("NFC", sentence).lower())) + " "
     padded = padded.replace(" không gian ", " ").replace(" khong gian ", " ")
     return any(f" {w} " in padded for w in _NEGATIONS)
 
@@ -79,7 +89,7 @@ def _mentions(norm_sentence: str, topic: str) -> bool:
 def _source_sentences(sources: list[dict]) -> list[tuple[str, bool]]:
     # Titles are labels, not statements; only document content can affirm or negate a policy.
     content = "\n".join(d.get('content', '') for d in sources)
-    return [(normalize(sentence), _negated(sentence)) for sentence in _sentences(content)]
+    return [(normalize(sentence), _negated(sentence, ignore_conditions=True)) for sentence in _sentences(content)]
 
 
 def _sentence_problems(text: str, source: list[tuple[str, bool]]) -> list[str]:

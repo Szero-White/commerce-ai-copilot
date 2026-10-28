@@ -6,7 +6,7 @@ from .retrieval import search
 from . import verification
 # Provider-agnostic despite the historical name (ollama or gemini); tests patch this attribute.
 from .llm import chat as ollama_chat, llm_enabled, llm_info, ModelUnavailable
-from .evidence import valid_cited_answer, safe_marketing_copy, safe_audience, context_window, question_numbers_for
+from .evidence import answer_problems, valid_cited_answer, safe_marketing_copy, safe_audience, context_window, question_numbers_for
 from .dialogue import clarification_text, resolve, turn_context_for
 
 SYSTEM = """Bạn là trợ lý hỗ trợ bán hàng CHỈ dựa trên tài liệu được cung cấp của Demo Lab.
@@ -151,6 +151,7 @@ def question_answer(store, settings, question, turn_context=None):
     model_called = False
     evidence_checked = False
     verification_info = None
+    answer_check = None         # lexical-path guard result (why an LLM answer was kept or refused)
     if not sources:
         answer = "Tôi chưa có đủ thông tin trong tài liệu để xác nhận. Vui lòng liên hệ nhân viên phụ trách."
         mode = "no_evidence"
@@ -161,7 +162,10 @@ def question_answer(store, settings, question, turn_context=None):
             mode = "context_too_short_extractive"
         else:
             try:
-                about = f" (nói về tài liệu [{bound['id']}] của lượt trước)" if bound else ""
+                if resolution.action == "scope":
+                    about = " (câu hỏi nối tiếp về các tài liệu " + ", ".join(f"[{i}]" for i in resolution.focus) + " của lượt trước)"
+                else:
+                    about = f" (nói về tài liệu [{bound['id']}] của lượt trước)" if bound else ""
                 by_meaning = any(s.get("evidence_basis") == "semantic" for s in included_sources)
                 if by_meaning:
                     # Found by meaning = relevant, not proven to state what was asked. The model must return the supporting
@@ -185,7 +189,10 @@ def question_answer(store, settings, question, turn_context=None):
                     model_called = True
                     evidence_checked = True
                     # An answer with missing/fabricated source IDs is NOT presented as verified RAG.
-                    if valid_cited_answer(candidate, included_sources, question_numbers_for(question, included_sources)):
+                    problems = answer_problems(candidate, included_sources, question_numbers_for(question, included_sources))
+                    # Why an answer was kept or refused, for diagnosis (the model's text is cut; no prompt, no key).
+                    answer_check = {"reason": "ok" if not problems else "; ".join(problems), "reply_excerpt": candidate[:400]}
+                    if not problems:
                         answer, mode = candidate, "llm_rag_cited"
                         sources = included_sources
                     else:
@@ -213,7 +220,7 @@ def question_answer(store, settings, question, turn_context=None):
     return {"answer":answer,"mode":mode,"retrieval_mode":search_mode,"sources":sources,
             "latency_ms":ms,"retrieval_ms":retrieval_ms,"tokens_in":tokens_in,"tokens_out":tokens_out,
             "query_trace":query_trace,
-            "verification":verification_info,
+            "verification":verification_info,"answer_check":answer_check,
             "citation_ids_checked":evidence_checked,
             "context_window":context_window(settings,tokens_in) if model_called else None,
             "llm":llm_info(settings) if model_called else None,

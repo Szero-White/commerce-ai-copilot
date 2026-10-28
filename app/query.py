@@ -150,7 +150,10 @@ def _pointer(items):
     return None
 
 
-RELATED_NOUNS = {("dieu", "kien"), ("thong", "tin"), ("chinh", "sach"), ("quy", "dinh"), ("chi", "tiet"), ("noi", "dung")}
+# Aspects of "something" that name no subject on their own (folded words; language cues, not product words).
+# Deliberately small: short syllables like "lệ" (hợp lệ) or "hạn" are content words in other phrases.
+GENERIC_ASPECT = {"dieu", "kien", "yeu", "cau"}
+RELATED_NOUNS ={("dieu", "kien"), ("thong", "tin"), ("chinh", "sach"), ("quy", "dinh"), ("chi", "tiet"), ("noi", "dung")}
 ELLIPSIS_HEADS = {"con", "vay", "va", "the"}
 ELLIPSIS_TAILS = {("thi", "sao"), ("ra", "sao"), ("the", "nao")}
 
@@ -410,10 +413,21 @@ def analyze(query: str, lexicon: Lexicon) -> Analysis:
                         and not lexicon.names_a_thing(w, result.accented.get(w, w))):
                     result.terms.remove(w)
                     result.soft.append(w)
+    # "Điều kiện đổi trả hàng lỗi": "điều kiện" is the frame of the request, a document states its conditions as "nếu ...".
+    # With another content word present it is searched, not required.
+    if any(t not in GENERIC_ASPECT for t in result.terms):
+        for t in [t for t in result.terms if t in GENERIC_ASPECT]:
+            result.terms.remove(t)
+            result.soft.append(t)
     if not result.terms and result.soft:
         result.terms, result.soft, result.promoted = result.soft, [], True
     result.has_entity = any(lexicon.names_a_thing(t, result.accented.get(t, t)) for t in result.terms)
     pointer = _pointer(items)
+    if (not pointer and result.terms and set(result.terms) <= GENERIC_ASPECT and not result.names
+            and not result.has_entity and not result.catalog):
+        # "Có điều kiện gì không?": an aspect with no subject of its own. Matching "điều kiện" against every document would pick
+        # whichever policy happens to use the word; the subject can only be the previous turn's, or the answer is a question.
+        pointer = ("related", None, set(result.terms))
     if pointer:
         result.pointer = pointer[:2]
         result.terms = [t for t in result.terms if t not in pointer[2]]     # references, not things to look for
@@ -421,6 +435,8 @@ def analyze(query: str, lexicon: Lexicon) -> Analysis:
         # "how much is that one?", "does it have a lock?": what is left describes a thing. If it names one (a word of some
         # title: "Bàn Oak này"), the question has its own subject and needs no earlier turn.
         result.needs_referent = not any(lexicon.names_a_thing(t, result.accented.get(t, t)) for t in result.terms)
-        if pointer[0] in ("topic", "related") and result.names:
-            result.needs_referent = False       # an unknown name is a NEW subject ("Còn Zephyr thì sao?"): the gate judges it
+        if pointer[0] in ("topic", "related") and (result.names or any(
+                any(c.isdigit() for c in t) and not t.isdigit() for t in result.terms)):
+            # An unknown name, or a code (letters + digits: "WELCOME8", "M7") is a NEW subject, not an aspect of the old one.
+            result.needs_referent = False
     return result

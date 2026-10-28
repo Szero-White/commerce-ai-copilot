@@ -353,17 +353,20 @@ class Store:
 
         The given documents come first. `[]` when they are about different things (the topic is then ambiguous). A document
         that names no such thing, or several, is its own scope: it is never widened by guessing."""
-        brands = self._corpus()["lexicon"].brand_words
-        docs = [d for d in (self.document(i) for i in dict.fromkeys(ids)) if d]
+        lexicon = self._corpus()["lexicon"]
+        # A word that most documents contain ("Demo", the catalogue's own name) is a label of the whole corpus, not a thing.
+        limit = max(3, 0.25 * lexicon.size)
+        brands = {b for b in lexicon.brand_words if lexicon.df.get(b, 0) <= limit}
+        docs =[d for d in (self.document(i) for i in dict.fromkeys(ids)) if d]
         if not docs:
             return []
         named = [{w for w in normalize(d["title"] + " " + d["content"]).split() if w in brands} for d in docs]
-        if len(docs) == 1 and len(named[0]) != 1:
-            return [docs[0]["id"]]
-        if any(len(n) != 1 for n in named) or len({next(iter(n)) for n in named}) != 1:
-            return []
-        brand = next(iter(named[0]))
         mine = [d["id"] for d in docs]
+        if all(not n for n in named) or (len(docs) == 1 and len(named[0]) != 1):
+            return mine         # nothing names a thing: the follow-up is about what was just shown, never widened
+        if any(len(n) != 1 for n in named) or len({next(iter(n)) for n in named}) != 1:
+            return []           # different things (or some unnamed): ambiguous, ask
+        brand = next(iter(named[0]))
         return mine + [d["id"] for d in self.documents()
                        if d["id"] not in mine and brand in normalize(d["title"] + " " + d["content"]).split()]
 

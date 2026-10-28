@@ -73,15 +73,30 @@ def _read_pdf(data, max_pages):
             raise IngestError("PDF được mã hóa hoặc có mật khẩu; chưa hỗ trợ.")
         if len(reader.pages) > max_pages:
             raise IngestError(f"PDF có {len(reader.pages)} trang, vượt giới hạn demo {max_pages} trang.", 413)
-        pages = []
-        for number, page in enumerate(reader.pages, 1):
-            lines = (page.extract_text() or "").splitlines()
-            pages.append((number, "\n".join(line for line in lines if not _PAGE_NUMBER.match(line))))
-        return pages
+        extracted = [[line for line in (page.extract_text() or "").splitlines() if not _PAGE_NUMBER.match(line)]
+                     for page in reader.pages]
+        repeated = _running_lines(extracted)
+        return [(number, "\n".join(line for line in lines if line.strip() not in repeated))
+                for number, lines in enumerate(extracted, 1)]
     except IngestError:
         raise
     except Exception as exc:        # a parser of untrusted bytes can fail in many ways; none may become a server error
         raise IngestError("Không đọc được PDF (tệp hỏng hoặc không hợp lệ).") from exc
+
+
+def _running_lines(pages, min_pages=4, share=0.6):
+    """Lines repeated on most pages: running headers, footers and disclaimers, not content.
+
+    Left in, they are glued to the body text of every chunk: they pollute search and, when they hold a negation ("không phải
+    chính sách thật"), make the whole run-on sentence look negated. Only documents of `min_pages`+ pages are judged, and a line
+    must be on `share` of the pages, so a heading used twice is never removed."""
+    if len(pages) < min_pages:
+        return set()
+    seen = {}
+    for lines in pages:
+        for line in {l.strip() for l in lines if len(l.strip()) >= 8}:
+            seen[line] = seen.get(line, 0) + 1
+    return {line for line, n in seen.items() if n >= max(3, share * len(pages))}
 
 
 def _units(text, size):
