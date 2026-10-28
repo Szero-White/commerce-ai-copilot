@@ -99,6 +99,10 @@ def _extractive_answer(sources, prefix):
         f"{_excerpt(s['content'])}" for i, s in enumerate(sources, 1))
 
 
+UNVERIFIED_PREFIX = ("CHƯA có câu trả lời được xác minh: mô hình từ chối, hoặc câu trả lời không qua kiểm tra bằng chứng. "
+                     "Các đoạn tài liệu dưới đây chỉ để bạn đối chiếu, chưa phải câu trả lời đã xác minh:")
+
+
 def _unverified_fallback(included, prefix):
     """Fallback text when the LLM did not verify an answer. A document found only by meaning was never checked against the
     question, so it is not shown at all; documents the gate admitted by words may still be shown for the user to read."""
@@ -176,8 +180,17 @@ def question_answer(store, settings, question, turn_context=None):
                     model_called = evidence_checked = True
                     checked = verification.verify(reply, included_sources, question)
                     verification_info = checked.info          # why it was accepted or refused; returned for diagnosis
+                    admitted = [s for s in included_sources if s.get("evidence_basis") != "semantic"]
+                    verification_info["cited_basis"] = ((checked.source or {}).get("evidence_basis") or "lexical") if checked.source else None
+                    verification_info["lexical_documents"] = [s["id"] for s in admitted]
                     if checked.ok:
                         answer, mode, sources = checked.text, "llm_rag_cited", [checked.source]
+                    elif admitted:
+                        # The documents the gate admitted by words are not thrown away because the model declined or its answer
+                        # failed the checks: they are shown for the reader, labelled as NOT a verified answer. Documents found
+                        # only by meaning were never checked against the question and are never shown this way.
+                        answer, sources = _extractive_answer(admitted, UNVERIFIED_PREFIX), admitted
+                        mode = "llm_citation_rejected_extractive"
                     else:
                         answer = "Tôi chưa có đủ thông tin trong tài liệu để xác nhận. Vui lòng liên hệ nhân viên phụ trách."
                         mode, sources = "llm_insufficient_evidence", []
@@ -224,7 +237,9 @@ def question_answer(store, settings, question, turn_context=None):
             "citation_ids_checked":evidence_checked,
             "context_window":context_window(settings,tokens_in) if model_called else None,
             "llm":llm_info(settings) if model_called else None,
-            "grounding_note":"ID trích dẫn và số liệu của các nguồn được trích đã kiểm tra sơ bộ; không xác minh ngữ nghĩa hay tính đúng toàn bộ câu trả lời." if evidence_checked else "Chưa kiểm chứng câu trả lời LLM.",
+            "grounding_note":("Đây chưa phải câu trả lời được xác minh: các đoạn tài liệu chỉ để đối chiếu." if mode == "llm_citation_rejected_extractive"
+                              else "ID trích dẫn và số liệu của các nguồn được trích đã kiểm tra sơ bộ; không xác minh ngữ nghĩa hay tính đúng toàn bộ câu trả lời." if evidence_checked
+                              else "Chưa kiểm chứng câu trả lời LLM."),
             "token_note":"Provider-reported tokens" if model_called else "Approximate chars/3; no LLM billing",
             # What the client sends back with its next question (see dialogue.py). Sources panel order = list order.
             "turn_context":turn_context_for(sources) if sources else (

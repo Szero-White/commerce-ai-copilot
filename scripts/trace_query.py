@@ -32,7 +32,8 @@ def trace_pipeline(store, settings, question, turn_context=None):
             "gate_rejected": result["query_trace"].get("gate_rejected", {}),
             "sources": [{"id": s["id"], "condition": s.get("condition_status"), "detail": s.get("condition_detail")}
                         for s in result["sources"]],
-            "mode": result["mode"], "turn_context": result["turn_context"]}
+            "mode": result["mode"], "turn_context": result["turn_context"],
+            "verification": result.get("verification"), "answer_check": result.get("answer_check")}
 
 
 def main(argv):

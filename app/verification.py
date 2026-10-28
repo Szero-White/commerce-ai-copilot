@@ -78,7 +78,11 @@ def _unsupported(answer: str, quote: str, question: str) -> list[str]:
 def verify(reply: str, sources: list[dict], question: str = "") -> Result:
     """Check a model reply about meaning-found documents. See the module docstring for what is and is not proven."""
     verdict = parse(reply)
-    info = {"reply_excerpt": (reply or "")[:400]}
+    # What each level of checking established (None = not reached). These are different things: a real citation id, a quote
+    # that really occurs in that document, numbers that come from the quote, the evidence guard, and the wording check. None
+    # of them proves that the conclusion is right.
+    checks = dict.fromkeys(("citation", "quote", "numbers", "guard", "wording"))
+    info = {"reply_excerpt": (reply or "")[:400], "checks": checks}
 
     def refuse(reason, source=None, quote=""):
         info["reason"] = reason
@@ -93,23 +97,33 @@ def verify(reply: str, sources: list[dict], question: str = "") -> Result:
     source = next((s for s in sources if s["id"].lower() == wanted), None)
     quote, answer = str(verdict.get("quote") or "").strip(), str(verdict.get("answer") or "").strip()
     if not source:
+        checks["citation"] = False
         return refuse("source id is not one of the documents")
+    checks["citation"] = True
     if len(quote) < MIN_QUOTE_CHARS or _fold(quote) not in _fold(source["title"] + " " + source["content"]):
+        checks["quote"] = False
         return refuse("the quoted sentence is not in the document", source, quote)
+    checks["quote"] = True
     # A citation tag in the answer is a label, not a claim. It must name exactly the source of the verdict; the well-formed tags
     # are then removed (digits of "[PRD-103]" are not product data) and the CODE appends the one citation shown to the user.
     if any(c.lower() != source["id"].lower() for c in citation_ids(answer)):
+        checks["citation"] = False
         return refuse("a citation in the answer is not the source of the verdict", source, quote)
     answer = " ".join(_CITE.sub(" ", answer).split())
     if not answer or len(answer) > MAX_ANSWER_CHARS:
         return refuse("no usable answer", source, quote)
     asked = question_numbers_for(question, [source])      # the customer's own figures, only next to a computed comparison
     if _numbers(answer) - _numbers(quote) - _numbers(" ".join(asked)):
+        checks["numbers"] = False
         return refuse("a number in the answer is not in the quoted sentence", source, quote)
+    checks["numbers"] = True
     text = f"{answer} [{source['id']}]"
     if not valid_cited_answer(text, [source], asked):
+        checks["guard"] = False
         return refuse("the answer fails the evidence check", source, quote)
+    checks["guard"] = True
     extra = _unsupported(answer, quote, question)
+    checks["wording"] = not extra
     if extra:
         info["unsupported_words"] = extra[:12]
         if verdict.get("kind") != "recommendation":
