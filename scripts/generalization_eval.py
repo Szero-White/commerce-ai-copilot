@@ -44,7 +44,6 @@ def check_turn(turn, result):
     ids = [s["id"] for s in result["sources"]]
     answer = result["answer"]
     checks = {}
-    wants = [("hit", all), ("hit_any", any)]
     if any(k in turn for k in ("hit", "hit_any", "hit_prefix")):
         ok = all(i in ids for i in turn.get("hit", [])) and (not turn.get("hit_any") or any(i in ids for i in turn["hit_any"])) \
             and (not turn.get("hit_prefix") or any(i.startswith(turn["hit_prefix"]) for i in ids))

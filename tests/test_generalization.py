@@ -22,13 +22,15 @@ def test_every_case_passes_except_the_declared_known_limits():
     report = run(SPEC)
     unexpected = [r for r in report["records"] if not r["passed"] and not r["known_limit"]]
     assert not unexpected, unexpected
-    assert all(m["total"] > 0 for m in report["measures"].values())      # each measure is really exercised
+    assert set(report["measures"]) == {"retrieval", "answer", "groundedness", "refusal", "multi_turn"}
+    assert all(m["total"] >= 5 for m in report["measures"].values())     # each measure is really exercised
 
 
 def test_the_declared_known_limit_still_fails_honestly():
     # If this starts passing, the label is stale: remove known_limit instead of keeping a false claim.
     report = run(SPEC)
-    assert any(not r["passed"] and r["known_limit"] for r in report["records"])
+    failing = {r["case"] for r in report["records"] if not r["passed"]}
+    assert failing == {"para-1"}
 
 
 def test_the_audit_documents_are_not_the_demo_catalogue():
@@ -127,4 +129,5 @@ def test_a_follow_up_with_a_new_unknown_name_is_not_bound_to_the_old_topic(tmp_p
     store, settings = load_store(SPEC, tmp_path)
     first = services.question_answer(store, settings, "Chính sách đổi trả kệ sách Linden thế nào?")
     r = services.question_answer(store, settings, "Còn Zephyr thì sao?", first["turn_context"])
-    assert r["sources"] == [] and r["mode"] in ("no_evidence", "needs_clarification")
+    assert r["query_trace"]["names"] == ["zephyr"]          # read as a new, unknown name, not as a pointer to Linden
+    assert r["sources"] == [] and r["mode"] == "no_evidence"
