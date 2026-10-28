@@ -108,8 +108,12 @@ def unsupported_claims(answer: str, sources: list[dict]) -> list[str]:
     return _sentence_problems(_CITE.sub("", answer), _source_sentences(sources))
 
 
-def answer_problems(answer: str, sources: list[dict]) -> list[str]:
-    """Why an answer fails validation (empty list = nothing flagged). Same rules as valid_cited_answer."""
+def answer_problems(answer: str, sources: list[dict], allowed_numbers=frozenset()) -> list[str]:
+    """Why an answer fails validation (empty list = nothing flagged). Same rules as valid_cited_answer.
+
+    `allowed_numbers`: figures the customer wrote that the answer may repeat. The caller passes them only for a source whose
+    comparison with the customer's figure was computed in code (`condition_status` limit_*), so that "không, tối đa 45 kg,
+    nên không chịu được 80 kg" is not rejected for echoing the 80 that was asked."""
     ids = citation_ids(answer)
     by_id = {s['id']: s for s in sources}
     if not ids:
@@ -123,19 +127,26 @@ def answer_problems(answer: str, sources: list[dict]) -> list[str]:
     for known in by_id:
         body = re.sub(rf"(?<![A-Za-z0-9-]){re.escape(known)}(?![A-Za-z0-9-])", " ", body)
     cited = [by_id[doc_id] for doc_id in ids]
-    extra = numbers(body) - numbers(evidence_text(cited))
+    extra = numbers(body) - numbers(evidence_text(cited)) - set(allowed_numbers)
     if extra:
         return [f"numbers not present in the cited sources: {sorted(extra)}"]
     return unsupported_claims(answer, cited)
 
 
-def valid_cited_answer(answer: str, sources: list[dict]) -> bool:
+def question_numbers_for(question: str, sources: list[dict]) -> set[str]:
+    """The customer's own figures, when at least one source carries a code-computed limit comparison; otherwise none."""
+    if any(str(s.get("condition_status", "")).startswith("limit_") for s in sources):
+        return numbers(question)
+    return set()
+
+
+def valid_cited_answer(answer: str, sources: list[dict], allowed_numbers=frozenset()) -> bool:
     """Checks source IDs, numerical literals and negated/unaffirmed promises (NOT semantic grounding).
 
     Numerical literals in the answer must be present in *cited* sources. This
     prevents a fabricated 90% offer even when another uncited document has 90%.
     """
-    return not answer_problems(answer, sources)
+    return not answer_problems(answer, sources, allowed_numbers)
 
 
 def safe_marketing_copy(candidate: dict, product: dict) -> bool:

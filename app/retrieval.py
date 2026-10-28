@@ -58,7 +58,7 @@ def semantic_candidates(store, settings, query, query_vector, admitted):
     what was asked. Nomination is by rank among all documents (`gate.rank_candidates`, no absolute threshold) and every hard
     constraint of `gate.check_document` still applies; `verification.py` decides whether anything may be claimed.
     """
-    from .gate import check_document, rank_candidates
+    from .gate import annotate, check_document, rank_candidates
     from .query import normalize
     analysis = store.analyze(query)
     if analysis.needs_referent:
@@ -88,7 +88,7 @@ def semantic_candidates(store, settings, query, query_vector, admitted):
     for doc_id in rank_candidates(scores, passes):
         if doc_id not in admitted:
             cond = verdicts[doc_id].condition
-            found.append(({**docs[doc_id], **({"condition_status": cond} if cond else {})}, best_span.get(doc_id, (0, ""))[1]))
+            found.append((annotate(dict(docs[doc_id]), verdicts[doc_id]), best_span.get(doc_id, (0, ""))[1]))
     return found
 
 
@@ -146,6 +146,8 @@ def search(store, settings, query, k=3, trace=None, only=None):
                 item[key] = documents[did][key]
         if documents[did].get("condition_status"):
             item["condition_status"] = documents[did]["condition_status"]
+        if documents[did].get("condition_detail"):
+            item["condition_detail"] = documents[did]["condition_detail"]
         if documents[did].get("evidence_basis"):
             item["evidence_basis"] = documents[did]["evidence_basis"]      # "semantic": found by meaning, to be verified
             item["evidence_span"] = documents[did]["evidence_span"]

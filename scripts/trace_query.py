@@ -2,6 +2,7 @@
 
 Usage: python -m scripts.trace_query "Có bàn gì?" ["another question" ...]
 Runs against a throw-away database built from the seed documents; nothing is written to runtime/.
+`trace_pipeline` (used by tests/test_generalization.py) traces all stages including follow-up resolution and the gate.
 """
 import sys
 import tempfile
@@ -15,6 +16,23 @@ def trace(store, question):
     info = {}
     found = store.fts_search(question, limit=12, trace=info)
     return {"question": question, **info, "found": [d["id"] for d in found]}
+
+
+def trace_pipeline(store, settings, question, turn_context=None):
+    """Every stage for one question: analysis, how a follow-up was resolved, the gate verdicts, the comparison computed in
+    code and the final mode. Answers 'at which step did this question fail?'. No model is called (LLM/embedding off)."""
+    from app.dialogue import resolve
+    from app.services import question_answer
+    analysis = store.analyze(question)
+    resolution = resolve(store, analysis, turn_context)
+    result = question_answer(store, settings, question, turn_context)
+    return {"question": question, "analysis": analysis.trace(),
+            "resolution": {"action": resolution.action, "bound": resolution.doc_id, "scope": resolution.scope,
+                           "focus": resolution.focus},
+            "gate_rejected": result["query_trace"].get("gate_rejected", {}),
+            "sources": [{"id": s["id"], "condition": s.get("condition_status"), "detail": s.get("condition_detail")}
+                        for s in result["sources"]],
+            "mode": result["mode"], "turn_context": result["turn_context"]}
 
 
 def main(argv):

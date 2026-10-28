@@ -12,7 +12,7 @@ as a number comparison done by `quantities.evaluate`, or through the checks in `
 import statistics
 from dataclasses import dataclass
 
-from .quantities import evaluate, exact_matches
+from .quantities import LIMIT_FAMILIES, evaluate, exact_matches, extract, limit_results
 from .query import POLICY_CATEGORIES, states_offer, states_stock
 
 
@@ -21,6 +21,7 @@ class Verdict:
     admitted: bool
     condition: str | None = None     # None (no comparison asked) | 'satisfied' | 'unverified'
     reason: str = ""
+    detail: str = ""                 # computed comparison, in words ('limit_within' / 'limit_exceeds')
 
 
 def check_document(analysis, text: str, tokens: list[str], category: str | None = None) -> Verdict:
@@ -38,19 +39,47 @@ def check_document(analysis, text: str, tokens: list[str], category: str | None 
     # A number the question states but the document does not ("Tủ Harbor H6 có 8 ngăn?"). When the question names a thing
     # this document describes, that is a premise the document CONTRADICTS: the document is returned flagged, so the answer
     # can show the real figure. Without a named thing, or for a percentage / offer, it stays a refusal (a made-up "90% off").
-    premise = bool(missing) or bool(analysis.quantities and not exact_matches(analysis.quantities, text))
+    # A quantity the document does not repeat may still be COMPARED with a limit the document states ("tối đa 45 kg" vs the
+    # 80 kg asked): that is a computed answer, not a contradicted premise.
+    unstated = [q for q in analysis.quantities if not exact_matches([q], text)]
+    limits = limit_results(unstated, text)
+    explained = {q.asked for q in limits}
+    explained_digits = {d for r in limits for d in r.asked.digits}
+    premise = (any(t not in explained_digits for t in missing)
+               or any(q not in explained for q in unstated))
+    exceeded = any(r.relation in ("exceeds", "below") for r in limits)
+    have_families = {h.family for h in extract(text)}
+    if any(q.family in LIMIT_FAMILIES and not q.in_dimensions and q.family not in have_families for q in unstated):
+        # The document gives no figure of this kind at all: it does not contradict the question, it says nothing about it.
+        return Verdict(False, reason="the document states no figure of the kind asked (weight, volume, length, time)")
     if premise and (analysis.asks_offer or not analysis.has_entity or any(q.family == "percent" for q in analysis.quantities)):
         return Verdict(False, reason="a number or quantity in the question is not stated in the document")
+    if limits and not premise and exceeded and not analysis.has_entity:
+        return Verdict(False, reason="the limit stated in the document does not allow the quantity asked")
     if analysis.asks_stock and not states_stock(tokens):
         return Verdict(False, reason="stock was asked and the document states no figure")
-    if not analysis.conditions:
-        return Verdict(True, "premise_mismatch" if premise else None)
-    results = [evaluate(c, text) for c in analysis.conditions]
-    if "no" in results:
-        return Verdict(False, reason="a comparison condition is not met")
+    if analysis.conditions:
+        results = [evaluate(c, text) for c in analysis.conditions]
+        if "no" in results:
+            return Verdict(False, reason="a comparison condition is not met")
+    else:
+        results = []
     if premise:
         return Verdict(True, "premise_mismatch")
+    if limits:
+        return Verdict(True, "limit_exceeds" if exceeded else "limit_within", detail="; ".join(r.detail for r in limits))
+    if not results:
+        return Verdict(True)
     return Verdict(True, "satisfied" if set(results) == {"yes"} else "unverified")
+
+
+def annotate(doc: dict, verdict: Verdict) -> dict:
+    """Copy what the gate concluded about a document onto it (shown to the reader and to the model)."""
+    if verdict.condition:
+        doc["condition_status"] = verdict.condition
+    if verdict.detail:
+        doc["condition_detail"] = verdict.detail
+    return doc
 
 
 @dataclass(frozen=True)

@@ -7,7 +7,7 @@ attribute clearly the answer is "unknown", never "yes".
 import math
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 NUM = r"\d{1,3}(?:[.,]\d{3})+|\d+(?:[.,]\d+)?"
 
@@ -62,6 +62,8 @@ class Quantity:
     in_dimensions: bool = False   # one of "A x B x C cm": which side is meant is not stated
     start: int = 0
     end: int = 0
+    bound: str | None = None      # 'max' | 'min' when the text states it as a limit ("tối đa 45 kg", "ít nhất 2 ngày")
+    digits: tuple = ()            # the digit groups as typed ("80"), to tell which question words a quantity explains
 
 
 def _labels(text: str, start: int) -> tuple:
@@ -91,7 +93,83 @@ def extract(text: str) -> list[Quantity]:
         else:
             fam, unit, mult = _UNIT_BY_WORD[m.group("unit").lower()]
             found.append(Quantity(parse_number(m.group("num")) * mult, fam, unit, _labels(text, m.start()), False, m.start(), m.end()))
-    return found
+    return [replace(q, bound=None if q.in_dimensions else _bound(text, q), digits=tuple(re.findall(r"\d+", text[q.start:q.end])))
+            for q in found]
+
+
+# ---- limits: "tối đa 45 kg" is a ceiling, not the weight of the product -------------------------------------------------
+# Language cues (folded words), not product words. A load/capacity word states a ceiling even without "tối đa".
+_BOUND_CUES = [(("toi", "da"), "max"), (("khong", "qua"), "max"), (("up", "to"), "max"), (("max",), "max"), (("maximum",), "max"),
+               (("tai", "trong"), "max"), (("chiu", "tai"), "max"), (("suc", "chua"), "max"),
+               (("toi", "thieu"), "min"), (("it", "nhat"), "min"), (("at", "least"), "min"), (("min",), "min"), (("minimum",), "min")]
+_AFTER_BOUND = [(("tro", "xuong"), "max"), (("tro", "len"), "min")]
+LIMIT_FAMILIES = {"weight", "volume", "length", "time"}      # money and percentages are claims/offers, never limits here
+_CAPACITY_VERBS = {"chiu", "tai", "dung", "chua", "mang", "do"}     # bear / load / hold / carry / support
+
+
+def _has_phrase(words, phrase):
+    return any(tuple(words[i:i + len(phrase)]) == phrase for i in range(len(words) - len(phrase) + 1))
+
+
+def _bound(text: str, q: "Quantity"):
+    before = [_fold(w) for w in re.findall(r"\w+", text[:q.start])[-4:]]
+    after = [_fold(w) for w in re.findall(r"\w+", text[q.end:])[:2]]
+    for phrase, bound in _BOUND_CUES:
+        if _has_phrase(before, phrase):
+            return bound
+    for phrase, bound in _AFTER_BOUND:
+        if _has_phrase(after, phrase):
+            return bound
+    return None
+
+
+@dataclass(frozen=True)
+class LimitResult:
+    asked: "Quantity"
+    relation: str           # 'within' | 'exceeds' | 'meets' | 'below'
+    limit: "Quantity"
+    detail: str
+
+
+_TIME_VI = {"day": "ngày", "week": "tuần", "month": "tháng", "year": "năm", "hour": "giờ"}
+
+
+def display(q: "Quantity") -> str:
+    if q.family == "weight":
+        return f"{q.value / 1000:g} kg" if q.value >= 1000 else f"{q.value:g} g"
+    return f"{q.value:g} {_TIME_VI.get(q.unit, q.unit)}"
+
+
+def limit_results(asked: list, text: str) -> list:
+    """Compare each asked quantity with the ONE limit of the same kind a document states. Decided here, in code.
+
+    Only quantities the text does not already state are compared. When the document gives no limit of that kind, or several
+    (per shelf and in total), there is no result: nothing is concluded, and the caller keeps the old 'numbers differ' flag.
+    """
+    have = extract(text)
+    results = []
+    for q in asked:
+        if q.family not in LIMIT_FAMILIES or q.in_dimensions:
+            continue
+        near = set(q.labels[-4:])
+        if "nang" in near and not near & _CAPACITY_VERBS:
+            continue            # "nặng 20 kg" is the weight of a thing, not a load it is asked to bear: no limit applies
+        if any(h.family == q.family and h.unit == q.unit and math.isclose(h.value, q.value, rel_tol=1e-9) for h in have):
+            continue
+        limits = [h for h in have if h.family == q.family and h.bound and not h.in_dimensions]
+        if len(limits) != 1:
+            continue
+        lim = limits[0]
+        if lim.bound == "max":
+            ok, relation = q.value <= lim.value, "within" if q.value <= lim.value else "exceeds"
+            note = f"tài liệu nêu giới hạn tối đa {display(lim)}; giá trị được hỏi là {display(q)}, " + (
+                "nằm trong giới hạn này" if ok else "VƯỢT giới hạn này")
+        else:
+            ok, relation = q.value >= lim.value, "meets" if q.value >= lim.value else "below"
+            note = f"tài liệu nêu mức tối thiểu {display(lim)}; giá trị được hỏi là {display(q)}, " + (
+                "đạt mức này" if ok else "THẤP hơn mức này")
+        results.append(LimitResult(q, relation, lim, note))
+    return results
 
 
 SCENARIO_WORDS = {"don", "mua", "dat", "tong", "tri"}   # "đơn 2 triệu", "mua 4 triệu", "trị giá", "tổng": an order's size

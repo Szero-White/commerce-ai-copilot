@@ -1,0 +1,62 @@
+{
+  "_label": "SYNTHETIC dev set for the generalisation audit. Products and policies here do not exist in data/seed_documents.json. It was written AFTER the root-cause analysis, so it is a regression set, NOT an independent evaluation.",
+  "documents": [
+    {"id": "T-001", "title": "Kệ sách Linden", "category": "product", "content": "Kệ sách Linden 5 tầng, tải trọng tối đa 45 kg mỗi kệ. Cao 180 cm, rộng 70 cm. Bảo hành 24 tháng."},
+    {"id": "T-002", "title": "Giá treo Maple", "category": "product", "content": "Giá treo tường Maple chịu tải tối đa 12 kg. Dài 90 cm. Bảo hành 6 tháng."},
+    {"id": "T-003", "title": "Đổi trả Kệ sách Linden", "category": "policy", "content": "Kệ sách Linden được đổi trả trong 14 ngày nếu còn nguyên tem và chưa lắp ráp. Phí vận chuyển đổi trả do khách chịu."},
+    {"id": "T-004", "title": "Đổi trả Giá treo Maple", "category": "policy", "content": "Giá treo Maple được đổi trả trong 30 ngày nếu lỗi do nhà sản xuất. Khách được hoàn phí vận chuyển."},
+    {"id": "T-005", "title": "Ghế xoay Vega", "category": "product", "content": "Ghế xoay Vega có tựa lưng lưới thoáng khí, chịu tải tối đa 120 kg, nâng hạ độ cao bằng ty hơi. Bảo hành 24 tháng. Giá 2.100.000 VND."},
+    {"id": "T-006", "title": "Bàn gấp Cedar", "category": "product", "content": "Bàn gấp Cedar kích thước 120 x 60 cm, giá 1.450.000 VND. Gập gọn dày 8 cm. Bảo hành 12 tháng."},
+    {"id": "T-007", "title": "Đèn bàn Orion", "category": "product", "content": "Đèn bàn Orion công suất 9 W, ánh sáng vàng ấm, có 3 mức sáng. Bảo hành 18 tháng. Giá 390.000 VND."},
+    {"id": "T-008", "title": "Chính sách giao hàng", "category": "policy", "content": "Giao hàng nội thành trong 2 ngày, phí vận chuyển 30.000 VND. Không giao vào Chủ nhật."}
+  ],
+  "uploads": [
+    {"filename": "titan_spec.txt", "text": "Ghế gaming Titan - thông số kỹ thuật.\n\nGhế gaming Titan chịu tải tối đa 150 kg. Chiều cao ghế điều chỉnh từ 45 đến 55 cm. Bảo hành 36 tháng."}
+  ],
+  "cases": [
+    {"id": "direct-1", "group": "1 direct", "turns": [{"q": "Tải trọng tối đa của kệ sách Linden là bao nhiêu?", "hit": ["T-001"], "contains": ["45 kg"]}]},
+    {"id": "direct-2", "group": "1 direct", "turns": [{"q": "Đèn bàn Orion công suất bao nhiêu?", "hit": ["T-007"], "contains": ["9 W"]}]},
+    {"id": "para-1", "group": "2 paraphrase", "known_limit": "no shared word between 'tiêu thụ' and 'công suất': BM25 cannot reach it; needs embeddings (not verified live)", "turns": [{"q": "Đèn Orion tiêu thụ bao nhiêu W vậy?", "hit": ["T-007"], "contains": ["9 W"]}]},
+    {"id": "para-2", "group": "2 paraphrase", "turns": [{"q": "Orion có ánh sáng màu gì thế?", "hit": ["T-007"], "contains": ["vàng ấm"]}]},
+    {"id": "para-3", "group": "2 paraphrase", "turns": [{"q": "Ghế Vega đỡ được bao nhiêu kg?", "hit": ["T-005"], "contains": ["120 kg"]}]},
+    {"id": "num-exceed-1", "group": "3 numeric", "turns": [{"q": "Kệ sách Linden chịu được 80 kg không?", "hit": ["T-001"], "contains": ["VƯỢT", "45 kg"]}]},
+    {"id": "num-within-1", "group": "3 numeric", "turns": [{"q": "Kệ sách Linden chịu được 30 kg không?", "hit": ["T-001"], "contains": ["nằm trong giới hạn"], "not_contains": ["VƯỢT"]}]},
+    {"id": "num-within-2", "group": "3 numeric", "turns": [{"q": "Ghế xoay Vega có chịu nổi 100 kg không?", "hit": ["T-005"], "contains": ["nằm trong giới hạn"]}]},
+    {"id": "num-exceed-2", "group": "3 numeric", "turns": [{"q": "Giá treo Maple chịu 15 kg được không?", "hit": ["T-002"], "contains": ["VƯỢT", "12 kg"]}]},
+    {"id": "num-price", "group": "3 numeric", "turns": [{"q": "Bàn gấp nào giá dưới 2 triệu?", "hit": ["T-006"], "forbid": ["T-005"]}]},
+    {"id": "num-discover", "group": "3 numeric", "turns": [{"q": "Sản phẩm nào chịu được 40 kg?", "hit": ["T-001", "T-005"], "forbid": ["T-002"]}]},
+    {"id": "num-counter-height", "group": "3 numeric", "note": "counter-example: a height is not a load limit", "turns": [{"q": "Kệ sách Linden cao 180 cm đúng không?", "hit": ["T-001"], "not_contains": ["VƯỢT", "giới hạn"]}]},
+    {"id": "num-counter-selfweight", "group": "3 numeric", "note": "counter-example: the weight OF the shelf is not the load it bears", "turns": [{"q": "Kệ sách Linden nặng 20 kg phải không?", "not_contains": ["nằm trong giới hạn", "VƯỢT"]}]},
+    {"id": "num-counter-nolimit", "group": "3 numeric", "note": "counter-example: a policy states no weight at all", "turns": [{"q": "Kệ sách Linden chịu được 80 kg không?", "forbid": ["T-003"]}]},
+    {"id": "neg-1", "group": "4 negation", "turns": [{"q": "Giá treo Maple không bảo hành đúng không?", "hit": ["T-002"], "contains": ["6 tháng"]}]},
+    {"id": "neg-2", "group": "4 negation", "turns": [{"q": "Kệ sách Linden không được đổi trả sau khi lắp ráp phải không?", "hit": ["T-003"], "contains": ["chưa lắp ráp"]}]},
+    {"id": "multi-1", "group": "5 multi-condition", "turns": [{"q": "Kệ sách cao hơn 150 cm và bảo hành 24 tháng có không?", "hit": ["T-001"]}]},
+    {"id": "multi-2", "group": "5 multi-condition", "turns": [{"q": "Ghế xoay chịu được 100 kg và bảo hành 24 tháng không?", "hit": ["T-005"], "contains": ["nằm trong giới hạn"]}]},
+    {"id": "mt-topic", "group": "6 multi-turn", "turns": [
+      {"q": "Chính sách đổi trả kệ sách Linden thế nào?", "hit": ["T-003"]},
+      {"q": "Điều kiện liên quan là gì?", "hit": ["T-003"], "forbid": ["T-004"]}]},
+    {"id": "mt-aspect", "group": "6 multi-turn", "turns": [
+      {"q": "Chính sách đổi trả kệ sách Linden thế nào?", "hit": ["T-003"]},
+      {"q": "Còn phí vận chuyển thì sao?", "hit": ["T-003"], "forbid": ["T-004", "T-008"]}]},
+    {"id": "mt-new-entity", "group": "6 multi-turn", "note": "counter-example: naming a NEW product must switch topic", "turns": [
+      {"q": "Chính sách đổi trả kệ sách Linden thế nào?", "hit": ["T-003"]},
+      {"q": "Còn giá treo Maple thì sao?", "hit_any": ["T-002", "T-004"], "forbid": ["T-003"]}]},
+    {"id": "mt-pronoun", "group": "6 multi-turn", "turns": [
+      {"q": "Ghế xoay Vega bảo hành bao lâu?", "hit": ["T-005"]},
+      {"q": "Nó chịu được bao nhiêu kg?", "hit": ["T-005"], "contains": ["120 kg"]}]},
+    {"id": "amb-1", "group": "7 ambiguous", "turns": [{"q": "Điều kiện liên quan là gì?", "clarify": true}]},
+    {"id": "amb-2", "group": "7 ambiguous", "turns": [{"q": "Nó chịu được bao nhiêu kg?", "clarify": true}]},
+    {"id": "amb-3", "group": "7 ambiguous", "note": "two different things were shown: do not guess which one", "turns": [
+      {"q": "Sản phẩm nào chịu được 10 kg?", "hit": ["T-001", "T-002", "T-005"]},
+      {"q": "Còn phí vận chuyển thì sao?", "clarify": true}]},
+    {"id": "ref-stock", "group": "8 refusal", "turns": [{"q": "Kệ sách Linden còn hàng không?", "refuse": true}]},
+    {"id": "ref-offer", "group": "8 refusal", "turns": [{"q": "Bàn gấp Cedar có khuyến mãi gì không?", "refuse": true}]},
+    {"id": "ref-private", "group": "8 refusal", "turns": [{"q": "Đơn hàng của tôi đã giao chưa?", "refuse": true}]},
+    {"id": "ref-unknown", "group": "8 refusal", "turns": [{"q": "Tủ giày Zephyr giá bao nhiêu?", "refuse": true}]},
+    {"id": "ref-offtopic", "group": "8 refusal", "turns": [{"q": "Hôm nay thời tiết thế nào?", "refuse": true}]},
+    {"id": "up-1", "group": "9 uploaded", "turns": [{"q": "Ghế gaming Titan chịu được 200 kg không?", "hit_prefix": "UPL-", "contains": ["VƯỢT", "150 kg", "titan_spec.txt"]}]},
+    {"id": "up-2", "group": "9 uploaded", "turns": [{"q": "Ghế gaming Titan bảo hành bao lâu?", "hit_prefix": "UPL-", "contains": ["36 tháng"]}]},
+    {"id": "sim-1", "group": "10 similar docs", "turns": [{"q": "Kệ sách Linden đổi trả trong bao nhiêu ngày?", "hit": ["T-003"], "forbid": ["T-004"], "contains": ["14 ngày"], "not_contains": ["30 ngày"]}]},
+    {"id": "sim-2", "group": "10 similar docs", "turns": [{"q": "Giá treo Maple đổi trả trong bao nhiêu ngày?", "hit": ["T-004"], "forbid": ["T-003"], "contains": ["30 ngày"], "not_contains": ["14 ngày"]}]}
+  ]
+}

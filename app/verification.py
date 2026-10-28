@@ -17,7 +17,7 @@ import json
 import re
 from typing import NamedTuple
 
-from .evidence import _CITE, citation_ids, valid_cited_answer
+from .evidence import _CITE, citation_ids, question_numbers_for, valid_cited_answer
 from .storage import normalize
 
 MIN_QUOTE_CHARS = 12
@@ -103,10 +103,11 @@ def verify(reply: str, sources: list[dict], question: str = "") -> Result:
     answer = " ".join(_CITE.sub(" ", answer).split())
     if not answer or len(answer) > MAX_ANSWER_CHARS:
         return refuse("no usable answer", source, quote)
-    if _numbers(answer) - _numbers(quote):
+    asked = question_numbers_for(question, [source])      # the customer's own figures, only next to a computed comparison
+    if _numbers(answer) - _numbers(quote) - _numbers(" ".join(asked)):
         return refuse("a number in the answer is not in the quoted sentence", source, quote)
     text = f"{answer} [{source['id']}]"
-    if not valid_cited_answer(text, [source]):
+    if not valid_cited_answer(text, [source], asked):
         return refuse("the answer fails the evidence check", source, quote)
     extra = _unsupported(answer, quote, question)
     if extra:

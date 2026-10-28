@@ -21,6 +21,8 @@ class Resolution:
     doc_id: str | None = None
     options: list = field(default_factory=list)   # candidate documents (dicts) to offer when asking
     pointer: tuple | None = None
+    scope: list = field(default_factory=list)     # 'scope': ids of the documents about the same named thing
+    focus: list = field(default_factory=list)     # 'scope': the documents shown last turn (what a bare follow-up is about)
 
 
 def turn_context_for(sources, kind=None):
@@ -42,7 +44,13 @@ def resolve(store, analysis, turn_context) -> Resolution:
             if doc:
                 known.append(doc)
     kind_of_pointer, number = analysis.pointer
-    if kind_of_pointer == "pronoun":
+    if kind_of_pointer in ("topic", "related"):
+        # "Còn phí vận chuyển thì sao?" / "điều kiện liên quan": same named thing as before, another aspect. Only when the
+        # documents shown last turn are about ONE named thing; otherwise ask.
+        scope = store.entity_scope([d["id"] for d in known]) if known else []
+        if scope:
+            return Resolution("scope", options=known, pointer=analysis.pointer, scope=scope, focus=[d["id"] for d in known])
+    elif kind_of_pointer == "pronoun":
         if len(known) == 1:
             return Resolution("bound", known[0]["id"], pointer=analysis.pointer)
     elif kind in ("list", "clarify") and len(known) >= 2 and number is not None:

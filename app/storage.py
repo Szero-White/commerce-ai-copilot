@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 from .config import ROOT
 # Query-side vocabulary and text normalisation live in query.py; re-exported for existing importers.
-from .gate import check_document
+from .gate import annotate, check_document
 from .query import (ALIASES, STOP, STOP_ACCENTED, Lexicon, analyze, normalize,  # noqa: F401
                     raw_tokens as _raw_tokens)
 
@@ -340,15 +340,32 @@ class Store:
             if not verdict.admitted:
                 rejected[doc["id"]] = verdict.reason
                 continue
-            if verdict.condition:
-                doc["condition_status"] = verdict.condition
-            found.append(doc)
+            found.append(annotate(doc, verdict))
         if trace is not None and rejected:
             trace["gate_rejected"] = rejected
         return _verified_first(found)[:limit]
 
     def analyze(self, query):
         return analyze(query, self._corpus()["lexicon"])
+
+    def entity_scope(self, ids):
+        """Documents about the same named thing (a brand / model word taken from the catalogue titles) as the given ones.
+
+        The given documents come first. `[]` when they are about different things (the topic is then ambiguous). A document
+        that names no such thing, or several, is its own scope: it is never widened by guessing."""
+        brands = self._corpus()["lexicon"].brand_words
+        docs = [d for d in (self.document(i) for i in dict.fromkeys(ids)) if d]
+        if not docs:
+            return []
+        named = [{w for w in normalize(d["title"] + " " + d["content"]).split() if w in brands} for d in docs]
+        if len(docs) == 1 and len(named[0]) != 1:
+            return [docs[0]["id"]]
+        if any(len(n) != 1 for n in named) or len({next(iter(n)) for n in named}) != 1:
+            return []
+        brand = next(iter(named[0]))
+        mine = [d["id"] for d in docs]
+        return mine + [d["id"] for d in self.documents()
+                       if d["id"] not in mine and brand in normalize(d["title"] + " " + d["content"]).split()]
 
     def _only(self, ids, analysis, trace=None):
         """The given documents, if they pass the hard constraints of the question ("tell me about that one")."""
@@ -360,7 +377,7 @@ class Store:
             text = doc["title"] + " " + doc["content"]
             verdict = check_document(analysis, text, normalize(text).split(), doc["category"])
             if verdict.admitted:
-                found.append({**doc, **({"condition_status": verdict.condition} if verdict.condition else {})})
+                found.append(annotate(dict(doc), verdict))
         return found
 
     def fts_search(self, query, limit=12, trace=None, only=None):
@@ -425,9 +442,7 @@ class Store:
                 if not verdict.admitted:
                     rejected[doc["id"]] = verdict.reason
                     continue
-                if verdict.condition:
-                    doc["condition_status"] = verdict.condition
-                filtered.append(doc)
+                filtered.append(annotate(doc, verdict))
                 if len(filtered) >= limit:
                     break
             if trace is not None and rejected:

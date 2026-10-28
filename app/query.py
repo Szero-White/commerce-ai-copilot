@@ -138,7 +138,21 @@ def _pointer(items):
             return "pronoun", None, {"it"}
     if any(raw == "nó" for raw, _, _ in items):
         return "pronoun", None, {"no"}
+    # "điều kiện liên quan?": related to what was said before. Only when nothing but function words follows "liên quan";
+    # "liên quan đến văn phòng" names its own subject.
+    for i in range(n - 1):
+        if folded[i:i + 2] == ["lien", "quan"] and all(f in STOP for f in folded[i + 2:]):
+            lead = set(folded[i - 2:i]) if tuple(folded[max(0, i - 2):i]) in RELATED_NOUNS else set()
+            return "related", None, {"lien", "quan"} | lead
+    # "Còn phí vận chuyển thì sao?": an elliptical follow-up; the subject of the previous turn carries over.
+    if n > 3 and folded[0] in ELLIPSIS_HEADS and tuple(folded[-2:]) in ELLIPSIS_TAILS:
+        return "topic", None, {folded[0]} | set(folded[-2:])
     return None
+
+
+RELATED_NOUNS = {("dieu", "kien"), ("thong", "tin"), ("chinh", "sach"), ("quy", "dinh"), ("chi", "tiet"), ("noi", "dung")}
+ELLIPSIS_HEADS = {"con", "vay", "va", "the"}
+ELLIPSIS_TAILS = {("thi", "sao"), ("ra", "sao"), ("the", "nao")}
 
 
 # "What are its features / details / description?": the frame of a request for information, not words to find in a document.
@@ -196,13 +210,15 @@ class Lexicon:
         other = sum(n for raw, n in counts.items() if raw not in function_forms)
         return other > 0 and other >= sum(n for raw, n in counts.items() if raw in function_forms)
 
-    def correct(self, token: str) -> str | None:
-        """Nearest indexed (or stop) word for a token the corpus has never seen; None when unsure."""
+    def correct(self, token: str, deliberate: bool = False) -> str | None:
+        """Nearest indexed (or stop) word for a token the corpus has never seen; None when unsure.
+
+        `deliberate`: the word was typed with diacritics, so it is not a slip towards a brand name."""
         if len(token) < 3 or any(c.isdigit() for c in token) or token in self.df or token in STOP or token in self.known:
             return None
         limit = 1 if len(token) < 8 else 2
         best, tied = limit + 1, []
-        if len(token) >= 4:
+        if len(token) >= 4 and not deliberate:
             # Brand / model words are what people mistype (a dropped syllable: "mota" for "motora"): up to 2 edits towards one
             # of them, when exactly one is that close.
             near = [b for b in self.brand_words if abs(len(b) - len(token)) <= 2 and _osa(token, b) <= 2]
@@ -216,7 +232,7 @@ class Lexicon:
                 best, tied = d, [cand]
             elif d == best and cand not in tied:
                 tied.append(cand)
-        if best > limit or len(tied) != 1:
+        if best > limit or len(tied) != 1 or (deliberate and tied[0] in self.brand_words):
             return None
         if len(token) < 6 and sorted(token) != sorted(tied[0]) and not (len(token) >= 4 and tied[0] in self.brand_words):
             # A short word is only repaired when it is a transposition of a known word, or a slip towards a brand / model
@@ -359,8 +375,10 @@ def analyze(query: str, lexicon: Lexicon) -> Analysis:
             result.dropped.append((raw, "request frame"))
             continue
         corrected = False
-        if folded not in lexicon.df and folded not in STOP and fixes < MAX_CORRECTIONS:   # correct() skips known words
-            fixed = lexicon.correct(folded)
+        # A word typed WITH diacritics was spelled on purpose ("liên" is a Vietnamese word, not a slip towards "Linden"): it may
+        # be repaired towards another ordinary word, never towards a brand / model name.
+        if folded not in lexicon.df and folded not in STOP and fixes < MAX_CORRECTIONS:
+            fixed = lexicon.correct(folded, deliberate=raw != folded)
             if fixed:
                 result.corrections[raw] = fixed
                 raw = folded = fixed
@@ -383,6 +401,15 @@ def analyze(query: str, lexicon: Lexicon) -> Analysis:
     result.names = list(dict.fromkeys(result.names))
     result.terms = list(dict.fromkeys(result.terms))[:MAX_TERMS]
     result.soft = [t for t in dict.fromkeys(result.soft) if t not in result.terms]
+    # The words right before a weight / volume ("chịu nổi 80 kg", "đựng được 2 lít") say what is asked about the number; the
+    # document states that limit in its own words ("tải trọng tối đa"), so they are searched but not required.
+    for q in result.quantities:
+        if q.family in ("weight", "volume") and not q.in_dimensions:
+            for w in q.labels[-2:]:
+                if (w in result.terms and not w.isdigit() and w not in result.names and w not in lexicon.brand_words
+                        and not lexicon.names_a_thing(w, result.accented.get(w, w))):
+                    result.terms.remove(w)
+                    result.soft.append(w)
     if not result.terms and result.soft:
         result.terms, result.soft, result.promoted = result.soft, [], True
     result.has_entity = any(lexicon.names_a_thing(t, result.accented.get(t, t)) for t in result.terms)
@@ -394,4 +421,6 @@ def analyze(query: str, lexicon: Lexicon) -> Analysis:
         # "how much is that one?", "does it have a lock?": what is left describes a thing. If it names one (a word of some
         # title: "Bàn Oak này"), the question has its own subject and needs no earlier turn.
         result.needs_referent = not any(lexicon.names_a_thing(t, result.accented.get(t, t)) for t in result.terms)
+        if pointer[0] in ("topic", "related") and result.names:
+            result.needs_referent = False       # an unknown name is a NEW subject ("Còn Zephyr thì sao?"): the gate judges it
     return result
